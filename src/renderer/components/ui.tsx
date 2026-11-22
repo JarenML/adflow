@@ -1,0 +1,155 @@
+import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { Loader2 } from 'lucide-react';
+import type { StepStatus } from '@shared/types';
+
+export function cx(...c: (string | false | null | undefined)[]): string {
+  return c.filter(Boolean).join(' ');
+}
+
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
+
+export function Button({
+  variant = 'secondary',
+  size = 'md',
+  loading,
+  icon,
+  children,
+  className,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: 'sm' | 'md' | 'lg'; loading?: boolean; icon?: ReactNode }) {
+  const styles: Record<Variant, string> = {
+    primary: 'brand-gradient text-white shadow-[0_8px_24px_-8px_rgba(124,92,255,0.7)] hover:brightness-110',
+    secondary: 'bg-panel-2 text-ink border border-line-2 hover:border-faint hover:bg-[#171b25]',
+    ghost: 'text-mute hover:text-ink hover:bg-panel-2',
+    danger: 'bg-bad/10 text-bad border border-bad/30 hover:bg-bad/20',
+  };
+  const sizes = { sm: 'h-8 px-3 text-xs gap-1.5', md: 'h-9 px-3.5 text-sm gap-2', lg: 'h-11 px-5 text-sm gap-2' };
+  return (
+    <button
+      className={cx(
+        'no-drag inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-lg font-medium transition-all disabled:opacity-40 disabled:pointer-events-none cursor-pointer',
+        styles[variant],
+        sizes[size],
+        className,
+      )}
+      disabled={loading || rest.disabled}
+      {...rest}
+    >
+      {loading ? <Loader2 className="size-4 animate-spin" /> : icon}
+      {children}
+    </button>
+  );
+}
+
+export function Card({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cx('rounded-2xl border border-line bg-panel', className)}>{children}</div>;
+}
+
+export function SectionTitle({ title, hint, right }: { title: string; hint?: string; right?: ReactNode }) {
+  return (
+    <div className="mb-4 flex items-end justify-between gap-4">
+      <div>
+        <h3 className="text-[15px] font-semibold text-ink">{title}</h3>
+        {hint && <p className="mt-0.5 text-[13px] text-mute">{hint}</p>}
+      </div>
+      {right}
+    </div>
+  );
+}
+
+export const STATUS_LABEL: Record<StepStatus, string> = {
+  locked: 'Bloqueado',
+  ready: 'Listo para empezar',
+  working: 'Trabajando',
+  review: 'Esperando por ti',
+  approved: 'Aprobado',
+  error: 'Necesita atención',
+};
+
+const STATUS_STYLE: Record<StepStatus, string> = {
+  locked: 'text-faint bg-white/[0.03] border-line',
+  ready: 'text-ink bg-white/[0.04] border-line-2',
+  working: 'text-brand-2 bg-brand-2/10 border-brand-2/30',
+  review: 'text-warn bg-warn/10 border-warn/30',
+  approved: 'text-ok bg-ok/10 border-ok/30',
+  error: 'text-bad bg-bad/10 border-bad/30',
+};
+
+export function StatusPill({ status, label }: { status: StepStatus; label?: string }) {
+  return (
+    <span className={cx('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium', STATUS_STYLE[status])}>
+      <span className={cx('size-1.5 rounded-full bg-current', status === 'working' && 'animate-pulse')} />
+      {label ?? STATUS_LABEL[status]}
+    </span>
+  );
+}
+
+export function Tag({ children, tone = 'default' }: { children: ReactNode; tone?: 'default' | 'brand' | 'ok' | 'warn' | 'bad' | 'cyan' }) {
+  const tones = {
+    default: 'text-mute bg-white/[0.04] border-line-2',
+    brand: 'text-[#b6a5ff] bg-brand/10 border-brand/30',
+    cyan: 'text-brand-2 bg-brand-2/10 border-brand-2/30',
+    ok: 'text-ok bg-ok/10 border-ok/30',
+    warn: 'text-warn bg-warn/10 border-warn/30',
+    bad: 'text-bad bg-bad/10 border-bad/30',
+  };
+  return <span className={cx('inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium', tones[tone])}>{children}</span>;
+}
+
+export function Empty({ icon, title, hint, action }: { icon: ReactNode; title: string; hint?: string; action?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-line-2 px-6 py-14 text-center">
+      <div className="mb-4 grid size-12 place-items-center rounded-xl bg-panel-2 text-mute">{icon}</div>
+      <p className="text-sm font-medium text-ink">{title}</p>
+      {hint && <p className="mt-1 max-w-md text-[13px] text-mute">{hint}</p>}
+      {action && <div className="mt-5">{action}</div>}
+    </div>
+  );
+}
+
+export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <label className="block">
+      <span className="text-[12px] font-medium text-mute">{label}</span>
+      <div className="mt-1.5">{children}</div>
+      {hint && <span className="mt-1 block text-[11px] text-faint">{hint}</span>}
+    </label>
+  );
+}
+
+export const inputCls =
+  'no-drag w-full rounded-lg border border-line-2 bg-[#0a0c11] px-3 py-2 text-sm text-ink placeholder:text-faint outline-none focus:border-brand/60 focus:ring-2 focus:ring-brand/20';
+
+export function Select({ value, onChange, options, disabled }: { value: string; onChange: (v: string) => void; options: { value: string; label: string; disabled?: boolean }[]; disabled?: boolean }) {
+  return (
+    <select className={cx(inputCls, 'appearance-none pr-8')} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
+      {options.map((o) => (
+        <option key={o.value} value={o.value} disabled={o.disabled}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+export function Logo({ size = 28 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
+      <defs>
+        <linearGradient id="adflow-g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#7c5cff" />
+          <stop offset="1" stopColor="#22d3ee" />
+        </linearGradient>
+      </defs>
+      <rect width="32" height="32" rx="9" fill="url(#adflow-g)" />
+      <path d="M7 21c3.2 0 4.4-10 8-10s4.4 10 8 10" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" />
+      <circle cx="23.5" cy="11" r="2.2" fill="#fff" />
+    </svg>
+  );
+}
+
+export function formatDate(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleString('es-PE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
