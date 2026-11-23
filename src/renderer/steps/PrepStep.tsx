@@ -1,27 +1,16 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, Brain, Clapperboard, FolderOpen, ImageIcon, Lock, Mic, Music } from 'lucide-react';
-import type { Capability, EpisodeState, ProviderInfo, Settings } from '@shared/types';
+import { ArrowRight, FolderOpen } from 'lucide-react';
+import type { EpisodeState, ProviderInfo, Settings } from '@shared/types';
 import { api } from '../lib/api';
-import { Button, Card, cx, Field, SectionTitle, Select, Tag } from '../components/ui';
+import { Button, Card, cx, SectionTitle } from '../components/ui';
+import { PrepOptions, type PrepChoice } from '../components/PrepOptions';
 
-const CAPS: { id: Capability; label: string; icon: typeof Brain; hint: string }[] = [
-  { id: 'brain', label: 'Cerebro', icon: Brain, hint: 'Escribe el guion, los prompts y revisa cada paso' },
-  { id: 'image', label: 'Imágenes', icon: ImageIcon, hint: 'Un cuadro realista por escena' },
-  { id: 'video', label: 'Videos', icon: Clapperboard, hint: 'Clips del gancho y los diálogos' },
-  { id: 'voice', label: 'Voz del narrador', icon: Mic, hint: 'Narración con tiempos por palabra' },
-  { id: 'music', label: 'Música', icon: Music, hint: 'Pista calzada a la línea de tiempo' },
-];
+export { billingTag } from '../components/PrepOptions';
 
-export function billingTag(p: ProviderInfo, allowPaid: boolean) {
-  if (p.billing === 'subscription') return <Tag tone="brand">Suscripción</Tag>;
-  if (p.billing === 'free') return <Tag tone="ok">Gratis</Tag>;
-  if (p.billing === 'manual') return <Tag>Manual</Tag>;
-  return (
-    <Tag tone={p.implemented && allowPaid ? 'warn' : 'default'}>
-      {(!p.implemented || !allowPaid) && <Lock className="size-3" />} Créditos
-    </Tag>
-  );
-}
+const SOURCE_HINT: Record<string, string> = {
+  'produccion-redes': 'Viene de «Producción de redes» en el admin.',
+  'playbook-files': 'Viene del catálogo de casos del playbook.',
+};
 
 export function PrepStep({ episode }: { episode: EpisodeState }) {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
@@ -31,10 +20,15 @@ export function PrepStep({ episode }: { episode: EpisodeState }) {
     api.providers().then(setProviders);
     api.getSettings().then(setSettings);
   }, []);
-  const prep = episode.steps.prep.status;
-  const locked = prep === 'approved';
+  const locked = episode.steps.prep.status === 'approved';
 
-  const choose = (cap: Capability, id: string) => api.patchEpisode(episode.id, { providers: { ...episode.providers, [cap]: id } });
+  const choice: PrepChoice = { providers: episode.providers, account: episode.brain.account, model: episode.brain.model, closingVoice: episode.closingVoice };
+  const change = (patch: Partial<PrepChoice>) =>
+    api.patchEpisode(episode.id, {
+      ...(patch.providers && { providers: patch.providers }),
+      ...((patch.account || patch.model) && { brain: { ...episode.brain, account: patch.account ?? episode.brain.account, model: patch.model ?? episode.brain.model } }),
+      ...(patch.closingVoice && { closingVoice: patch.closingVoice }),
+    });
 
   const start = async () => {
     setStarting(true);
@@ -46,7 +40,15 @@ export function PrepStep({ episode }: { episode: EpisodeState }) {
   return (
     <div className="space-y-6">
       <Card className="p-5">
-        <SectionTitle title="Episodio" hint="Sale del catálogo de casos del playbook." right={<Button size="sm" variant="ghost" icon={<FolderOpen className="size-4" />} onClick={() => api.openPath(episode.dir)}>Abrir carpeta</Button>} />
+        <SectionTitle
+          title="Episodio"
+          hint={SOURCE_HINT[episode.source?.id ?? ''] ?? 'Episodio de esta computadora.'}
+          right={
+            <Button size="sm" variant="ghost" icon={<FolderOpen className="size-4" />} onClick={() => api.openPath(episode.dir)}>
+              Abrir carpeta
+            </Button>
+          }
+        />
         <div className="grid grid-cols-2 gap-4 text-[13px] lg:grid-cols-4">
           {[
             ['Caso', episode.caseNumber ? `#${episode.caseNumber}` : '—'],
@@ -62,76 +64,7 @@ export function PrepStep({ episode }: { episode: EpisodeState }) {
         </div>
       </Card>
 
-      <Card className="p-5">
-        <SectionTitle title="Conexiones de este episodio" hint="Vienen de tus valores por defecto (Ajustes). Los proveedores con créditos están bloqueados hasta que los habilites." />
-        <div className="space-y-2.5">
-          {CAPS.map((cap) => {
-            const opts = providers.filter((p) => p.capability === cap.id);
-            const current = opts.find((p) => p.id === episode.providers[cap.id]);
-            const Icon = cap.icon;
-            return (
-              <div key={cap.id} className="grid grid-cols-[220px_1fr_auto] items-center gap-4 rounded-xl border border-line bg-panel-2/40 px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <div className="grid size-9 place-items-center rounded-lg bg-panel-2 text-mute">
-                    <Icon className="size-[18px]" />
-                  </div>
-                  <div>
-                    <p className="text-[13px] font-semibold">{cap.label}</p>
-                    <p className="text-[11px] text-faint">{cap.hint}</p>
-                  </div>
-                </div>
-                <div>
-                  <Select
-                    value={episode.providers[cap.id]}
-                    disabled={locked && cap.id === 'brain'}
-                    onChange={(v) => choose(cap.id, v)}
-                    options={opts.map((p) => ({
-                      value: p.id,
-                      label: `${p.name}${p.implemented ? '' : ' · próximamente'}`,
-                      disabled: !p.implemented || (p.billing === 'credits' && !settings?.allowPaidProviders),
-                    }))}
-                  />
-                  {current && <p className="mt-1.5 text-[11px] text-faint">{current.costNote}</p>}
-                </div>
-                <div className="w-28 text-right">{current && billingTag(current, !!settings?.allowPaidProviders)}</div>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
-
-      <Card className="p-5">
-        <SectionTitle title="Cerebro" hint="Claude Code corre en tu computadora con la cuenta elegida." />
-        <div className="grid grid-cols-3 gap-4">
-          <Field label="Cuenta de Claude">
-            <Select
-              value={episode.brain.account}
-              onChange={(v) => api.patchEpisode(episode.id, { brain: { ...episode.brain, account: v } })}
-              options={(settings?.claude.accounts ?? []).map((a) => ({ value: a.id, label: a.label }))}
-            />
-          </Field>
-          <Field label="Modelo">
-            <Select
-              value={episode.brain.model}
-              onChange={(v) => api.patchEpisode(episode.id, { brain: { ...episode.brain, model: v } })}
-              options={[
-                { value: 'opus', label: 'Opus (más criterio)' },
-                { value: 'sonnet', label: 'Sonnet (más rápido)' },
-              ]}
-            />
-          </Field>
-          <Field label="Voz del cierre" hint="Quién dice «¡Robles punto a i!» al final">
-            <Select
-              value={episode.closingVoice}
-              onChange={(v) => api.patchEpisode(episode.id, { closingVoice: v as EpisodeState['closingVoice'] })}
-              options={[
-                { value: 'narrator', label: 'El narrador del video' },
-                { value: 'template', label: 'La de la plantilla' },
-              ]}
-            />
-          </Field>
-        </div>
-      </Card>
+      <PrepOptions value={choice} onChange={(p) => void change(p)} providers={providers} settings={settings} lockBrain={locked} />
 
       <div className={cx('flex items-center justify-between rounded-2xl border px-5 py-4', locked ? 'border-ok/30 bg-ok/5' : 'border-brand/30 bg-brand/5')}>
         <div>

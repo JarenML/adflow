@@ -108,6 +108,7 @@ function registerIpc() {
   handle('adCopy', (id: string) => pipeline.adCopy(id));
   handle('finalVideo', (id: string) => pipeline.finalVideo(id));
   handle('library', () => pipeline.library());
+  handle('sourceBrief', (id: string) => pipeline.sourceBrief(id));
   handle('episodes', () => pipeline.list());
   handle('episode', (id: string) => pipeline.get(id));
   handle('createEpisode', (sourceEpisodeId: string) => pipeline.createFromSource(sourceEpisodeId));

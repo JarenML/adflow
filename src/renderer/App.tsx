@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Library, Settings as SettingsIcon } from 'lucide-react';
+import { BriefcaseBusiness, Library, Settings as SettingsIcon, WandSparkles } from 'lucide-react';
 import type { Settings, StepId } from '@shared/types';
 import { api, useQueue } from './lib/api';
 import { cx, Logo } from './components/ui';
 import { Dashboard } from './views/Dashboard';
+import { CreateView } from './views/CreateView';
 import { LibraryView } from './views/Library';
 import { EpisodeView } from './views/EpisodeView';
 import { SettingsView } from './views/SettingsView';
 
-type Route = { view: 'dashboard' } | { view: 'library' } | { view: 'settings' } | { view: 'episode'; id: string; step?: StepId };
+type Route = { view: 'create'; pick?: string } | { view: 'jobs' } | { view: 'library' } | { view: 'settings' } | { view: 'episode'; id: string; step?: StepId };
 
 /** The initial route can come from the URL hash (used by screenshot checks): episode:<id>[@step]. */
 function initialRoute(): Route {
@@ -17,8 +18,9 @@ function initialRoute(): Route {
     const [id, step] = h.slice(8).split('@');
     return { view: 'episode', id, step: step as StepId | undefined };
   }
-  if (h === 'library' || h === 'settings') return { view: h };
-  return { view: 'dashboard' };
+  if (h.startsWith('create:')) return { view: 'create', pick: h.slice(7) };
+  if (h === 'jobs' || h === 'library' || h === 'settings') return { view: h };
+  return { view: 'create' };
 }
 
 export default function App() {
@@ -33,11 +35,13 @@ export default function App() {
   const pb = settings?.playbooks.find((p) => p.id === settings.activePlaybookId);
 
   const nav = [
-    { id: 'dashboard', label: 'Producción', icon: LayoutDashboard },
+    { id: 'create', label: 'Crear', icon: WandSparkles },
+    { id: 'jobs', label: 'Jobs', icon: BriefcaseBusiness },
     { id: 'library', label: 'Biblioteca', icon: Library },
     { id: 'settings', label: 'Ajustes', icon: SettingsIcon },
   ] as const;
-  const active = route.view === 'episode' ? 'dashboard' : route.view;
+  const active = route.view === 'episode' ? 'jobs' : route.view;
+  const open = (id: string, step?: StepId) => setRoute({ view: 'episode', id, step });
 
   return (
     <div className="grain flex h-full">
@@ -75,12 +79,13 @@ export default function App() {
 
       <main className="min-w-0 flex-1 overflow-hidden">
         {route.view === 'episode' ? (
-          <EpisodeView id={route.id} initialStep={route.step} onBack={() => setRoute({ view: 'dashboard' })} />
+          <EpisodeView key={`${route.id}@${route.step ?? ''}`} id={route.id} initialStep={route.step} onBack={() => setRoute({ view: 'jobs' })} />
         ) : (
           <div className="h-full overflow-y-auto">
             <div className="drag h-10" />
-            {route.view === 'dashboard' && <Dashboard onOpen={(id) => setRoute({ view: 'episode', id })} onLibrary={() => setRoute({ view: 'library' })} />}
-            {route.view === 'library' && <LibraryView onOpen={(id) => setRoute({ view: 'episode', id })} />}
+            {route.view === 'create' && <CreateView key={route.pick ?? ''} initialPick={route.pick} onOpen={open} onLibrary={() => setRoute({ view: 'library' })} onSettings={() => setRoute({ view: 'settings' })} />}
+            {route.view === 'jobs' && <Dashboard onOpen={(id) => open(id)} onCreate={() => setRoute({ view: 'create' })} />}
+            {route.view === 'library' && <LibraryView onOpen={(id) => open(id)} />}
             {route.view === 'settings' && <SettingsView />}
           </div>
         )}

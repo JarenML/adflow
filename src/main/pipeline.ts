@@ -156,6 +156,12 @@ export class Pipeline {
     return this.update(id, (e) => Object.assign(e, patch));
   }
 
+  /** What the brain will get about an episode of the active source, before it is created. */
+  async sourceBrief(sourceEpisodeId: string): Promise<string> {
+    const settings = loadSettings();
+    return getSource(settings.episodeSource).brief(activePlaybook(settings), sourceEpisodeId);
+  }
+
   /** Creates (or opens) the local episode of a source episode and claims it in the source. */
   async createFromSource(sourceEpisodeId: string): Promise<EpisodeState> {
     const item = (await this.library()).find((i) => i.id === sourceEpisodeId);

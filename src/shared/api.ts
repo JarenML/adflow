@@ -39,6 +39,8 @@ export interface AdflowApi {
   storagePath(): Promise<string>;
 
   library(): Promise<LibraryItem[]>;
+  /** The brief of an episode of the source (what Claude will read), before creating it. */
+  sourceBrief(sourceEpisodeId: string): Promise<string>;
   episodes(): Promise<EpisodeState[]>;
   episode(id: string): Promise<EpisodeState>;
   createEpisode(sourceEpisodeId: string): Promise<EpisodeState>;
@@ -84,6 +86,7 @@ export const API_METHODS = [
   'adCopy',
   'finalVideo',
   'library',
+  'sourceBrief',
   'episodes',
   'episode',
   'createEpisode',

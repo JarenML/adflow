@@ -1,4 +1,4 @@
-// Production board: the episodes in AdFlow by team status, plus what is waiting for you.
+// Jobs: the episodes in AdFlow by team status, plus what is waiting for you.
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowRight, BellDot, Clapperboard, Cpu, ImageIcon, Library, Plus } from 'lucide-react';
@@ -44,7 +44,7 @@ function Lanes({ q }: { q?: QueueSnapshot }) {
   );
 }
 
-export function Dashboard({ onOpen, onLibrary }: { onOpen: (id: string) => void; onLibrary: () => void }) {
+export function Dashboard({ onOpen, onCreate }: { onOpen: (id: string) => void; onCreate: () => void }) {
   const [episodes] = useLive(() => api.episodes(), []);
   const q = useQueue();
   const [filter, setFilter] = useState<Filter>('all');
@@ -62,11 +62,11 @@ export function Dashboard({ onOpen, onLibrary }: { onOpen: (id: string) => void;
     <div className="mx-auto max-w-[1180px] px-8 py-8">
       <div className="mb-6 flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Producción</h1>
-          <p className="mt-1 text-[13px] text-mute">Varios episodios avanzan a la vez. Tú apruebas cada paso.</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Jobs</h1>
+          <p className="mt-1 text-[13px] text-mute">Lo que estás produciendo. Varios episodios avanzan a la vez; tú apruebas cada paso.</p>
         </div>
-        <Button variant="primary" icon={<Plus className="size-4" />} onClick={onLibrary}>
-          Nuevo episodio
+        <Button variant="primary" icon={<Plus className="size-4" />} onClick={onCreate}>
+          Crear
         </Button>
       </div>
 
@@ -97,10 +97,10 @@ export function Dashboard({ onOpen, onLibrary }: { onOpen: (id: string) => void;
         <Empty
           icon={<Library className="size-5" />}
           title="Aún no hay episodios en producción"
-          hint="Elige uno o varios episodios pendientes en la biblioteca para empezar."
+          hint="Empieza uno en Crear: eliges el episodio, cómo se produce y Claude escribe el guion."
           action={
-            <Button variant="primary" icon={<ArrowRight className="size-4" />} onClick={onLibrary}>
-              Ir a la biblioteca
+            <Button variant="primary" icon={<ArrowRight className="size-4" />} onClick={onCreate}>
+              Ir a Crear
             </Button>
           }
         />

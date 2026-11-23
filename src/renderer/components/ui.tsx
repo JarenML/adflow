@@ -33,8 +33,8 @@ export function Button({
         sizes[size],
         className,
       )}
-      disabled={loading || rest.disabled}
       {...rest}
+      disabled={loading || rest.disabled}
     >
       {loading ? <Loader2 className="size-4 animate-spin" /> : icon}
       {children}
