@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
-import { Loader2 } from 'lucide-react';
-import type { StepStatus } from '@shared/types';
+import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
+import type { StepStatus, TeamProgress, TeamStatus } from '@shared/types';
+import { describeProgress, TEAM_STATUS_LABEL } from '@shared/progress';
 
 export function cx(...c: (string | false | null | undefined)[]): string {
   return c.filter(Boolean).join(' ');
@@ -152,4 +153,26 @@ export function formatDate(iso?: string): string {
   if (!iso) return '';
   const d = new Date(iso);
   return d.toLocaleString('es-PE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+const TEAM_STYLE: Record<TeamStatus, string> = {
+  pendiente: 'text-mute bg-white/[0.04] border-line-2',
+  en_produccion: 'text-brand-2 bg-brand-2/10 border-brand-2/30',
+  terminado: 'text-[#b6a5ff] bg-brand/10 border-brand/30',
+  publicado: 'text-ok bg-ok/10 border-ok/30',
+};
+
+/** One of the four team statuses, optionally with the step ("En producción · Imágenes"). */
+export function TeamStatusPill({ progress, status, extra }: { progress?: TeamProgress; status?: TeamStatus; extra?: string }) {
+  const s = progress?.status ?? status ?? 'pendiente';
+  const label = progress ? describeProgress(progress) : TEAM_STATUS_LABEL[s];
+  return (
+    <span className={cx('inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11px] font-medium', TEAM_STYLE[s])}>
+      {s === 'publicado' ? <CheckCircle2 className="size-3" /> : s === 'pendiente' ? <Circle className="size-3" /> : <span className={cx('size-1.5 rounded-full bg-current', s === 'en_produccion' && 'animate-pulse')} />}
+      {label}
+      {extra && <span className="opacity-70">· {extra}</span>}
+      {progress?.waitingForYou && <span className="ml-0.5 size-1.5 rounded-full bg-warn" title="Esperando por ti" />}
+      {progress?.error && <span className="ml-0.5 size-1.5 rounded-full bg-bad" title="Necesita atención" />}
+    </span>
+  );
 }

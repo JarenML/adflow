@@ -7,6 +7,7 @@ export const STEPS = [
   { id: 'videos', label: 'Videos', hint: 'Clips del gancho y los diálogos' },
   { id: 'voice', label: 'Voz del narrador', hint: 'Voz, tomas y narración completa' },
   { id: 'render', label: 'Render final', hint: 'Montaje, mezcla y control de calidad' },
+  { id: 'publish', label: 'Publicación', hint: 'Texto del anuncio, enlace y dónde se publicó' },
 ] as const;
 
 export type StepId = (typeof STEPS)[number]['id'];
@@ -65,9 +66,32 @@ export interface VideoClipConfig {
   resolution: '720p' | '1080p';
 }
 
+/** The four statuses the whole team sees (AdFlow and the admin). */
+export type TeamStatus = 'pendiente' | 'en_produccion' | 'terminado' | 'publicado';
+
+export interface Publication {
+  network: string;
+  date: string;
+  url?: string;
+  utmContent?: string;
+  by?: string;
+}
+
+/** What AdFlow tells the episode source after every change (see shared/progress.ts). */
+export interface TeamProgress {
+  status: TeamStatus;
+  step?: StepId;
+  waitingForYou?: boolean;
+  error?: boolean;
+  publication?: Publication;
+}
+
 export interface EpisodeState {
   id: string;
   playbookId: string;
+  /** Which episode source it came from and its stable id there. */
+  source?: { id: string; episodeId: string };
+  publication?: Publication;
   title: string;
   serie: string;
   slug: string;
@@ -88,21 +112,41 @@ export interface EpisodeState {
   versions: Partial<Record<StepId, number>>;
 }
 
-export interface LibraryItem {
-  key: string;
-  caseNumber: number;
+/** An episode as an episode source describes it (files of the playbook, the team admin…). */
+export interface SourceEpisode {
+  /** Stable id inside its source. */
+  id: string;
+  caseNumber?: number;
   businessType: string;
   solution: string;
   title: string;
+  /** Short description: the label people see in lists. */
   summary: string;
-  /** Full markdown block of the case in the catalog (context for the brain). */
-  block: string;
-  produced: boolean;
+  /** Folder of the episode relative to the episodes root, when the source knows it. */
   folder?: string;
+  status: TeamStatus;
+  /** Step label as the source knows it (e.g. "8 · Revisión" or "Imágenes"). */
   stepLabel?: string;
-  status?: string;
+  assignee?: string;
+  publication?: Publication;
   notes?: string;
+}
+
+/** A row of the library: the source episode plus the local AdFlow episode linked to it, if any. */
+export interface LibraryItem extends SourceEpisode {
+  sourceId: string;
   episodeId?: string;
+  /** The local episode's progress decides the status while it is in AdFlow. */
+  progress?: TeamProgress;
+}
+
+export interface EpisodeSourceInfo {
+  id: string;
+  name: string;
+  description: string;
+  implemented: boolean;
+  /** Shared with the team (statuses and assignees visible to everyone). */
+  shared: boolean;
 }
 
 export interface Playbook {
@@ -116,10 +160,8 @@ export interface Playbook {
   /** Where episode folders live, relative to rootDir unless absolute. */
   episodesRoot: string;
   toolsDir: string;
-  /** Section ids of the master prompt loaded in every step. */
-  always: string[];
-  /** Section ids loaded for each step. */
-  sections: Record<StepId, string[]>;
+  /** AdFlow config inside the playbook repo (sections per step, script checks). Falls back to a preset. */
+  configFile: string;
 }
 
 export interface ClaudeAccount {
@@ -132,6 +174,8 @@ export interface ClaudeAccount {
 export interface Settings {
   playbooks: Playbook[];
   activePlaybookId: string;
+  /** Where the list of episodes comes from (see src/main/sources). */
+  episodeSource: string;
   claude: { model: string; effort: 'low' | 'medium' | 'high'; accounts: ClaudeAccount[]; defaultAccount: string };
   defaults: Record<Capability, string>;
   concurrency: { brain: number; image: number; render: number };
@@ -219,6 +263,10 @@ export type PipelineAction =
   | { step: 'videos'; type: 'import'; sceneId: string }
   | { step: 'voice'; type: 'preview'; text: string }
   | { step: 'voice'; type: 'generate' }
+  | { step: 'publish'; type: 'adCopy' }
+  | { step: 'publish'; type: 'feedback'; message: string }
+  | { step: 'publish'; type: 'markPublished'; publication: Publication }
+  | { step: 'publish'; type: 'unpublish' }
   | { step: StepId; type: 'approve' }
   | { step: StepId; type: 'reopen' }
   | { step: StepId; type: 'cancel' };

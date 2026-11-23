@@ -1,5 +1,5 @@
 // Pure parsers for the playbook markdown files (no file system access, so they are testable).
-import type { LibraryItem } from '@shared/types';
+import type { SourceEpisode, TeamStatus } from '@shared/types';
 
 export interface Section {
   id: string;
@@ -151,6 +151,7 @@ export interface TrackingRow {
   folder?: string;
   step: string;
   status: string;
+  published: string;
   notes: string;
 }
 
@@ -169,6 +170,7 @@ export function parseTracking(md: string): TrackingRow[] {
       folder: folder && folder !== '—' ? folder : undefined,
       step: cells[5],
       status: cells[6],
+      published: cells[8],
       notes: cells[9],
     });
   }
@@ -197,34 +199,39 @@ export function episodeSlug(title: string, n = 1): string {
   return `episodio-${String(n).padStart(2, '0')}-${slugify(title.replace(/[¿?¡!]/g, ''), 4)}`;
 }
 
-/** One library item per tracked episode, plus every catalog case that has no episode yet. */
-export function buildLibrary(cases: CaseBlock[], rows: TrackingRow[]): LibraryItem[] {
-  const items: LibraryItem[] = [];
+/** Team status of a tracked row ("✅ Terminado", "📣 Publicado", "0 · Pendiente", "8 · Revisión"…). */
+export function rowStatus(r: TrackingRow | undefined, producedInCatalog: boolean): TeamStatus {
+  if (!r) return producedInCatalog ? 'terminado' : 'pendiente';
+  if (/publicado/i.test(r.step) || (r.published && r.published !== '—' && r.published !== '-')) return 'publicado';
+  if (/terminado/i.test(r.step)) return 'terminado';
+  if (/pendiente/i.test(r.step)) return 'pendiente';
+  return 'en_produccion';
+}
+
+/**
+ * Episodes of the playbook catalog: one per tracked row, plus every case with no row yet.
+ * Ids are stable: the episode folder when the tracking table has one, otherwise case + title.
+ */
+export function toSourceEpisodes(cases: CaseBlock[], rows: TrackingRow[]): SourceEpisode[] {
+  const out: SourceEpisode[] = [];
   for (const c of cases) {
     const own = rows.filter((r) => r.caseNumber === c.number);
-    const base = {
-      caseNumber: c.number,
-      businessType: c.businessType,
-      solution: c.solution,
-      summary: c.summary,
-      block: c.block,
-    };
-    if (!own.length) {
-      items.push({ ...base, key: `case-${c.number}`, title: c.title, produced: c.produced });
-      continue;
-    }
-    own.forEach((r, i) => {
-      items.push({
+    const base = { caseNumber: c.number, businessType: c.businessType, solution: c.solution, summary: c.summary };
+    const list = own.length ? own : [undefined];
+    for (const r of list) {
+      const title = r?.episode || c.title;
+      const status = rowStatus(r, c.produced);
+      out.push({
         ...base,
-        key: `case-${c.number}${own.length > 1 ? `-${i + 1}` : ''}`,
-        title: r.episode || c.title,
-        produced: /terminado|publicado/i.test(r.step),
-        folder: r.folder,
-        stepLabel: r.step,
-        status: r.status,
-        notes: r.notes,
+        id: r?.folder ? `folder:${r.folder}` : `case:${c.number}:${slugify(title, 5)}`,
+        title,
+        folder: r?.folder,
+        status,
+        stepLabel: r && status === 'en_produccion' ? r.step : undefined,
+        publication: status === 'publicado' && r?.published && r.published !== '—' ? { network: r.published, date: '' } : undefined,
+        notes: r?.notes,
       });
-    });
+    }
   }
-  return items.sort((a, b) => Number(a.produced) - Number(b.produced) || a.caseNumber - b.caseNumber);
+  return out;
 }

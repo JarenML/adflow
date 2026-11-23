@@ -11,6 +11,7 @@ import type {
   LibraryItem,
   NarrationLine,
   PipelineAction,
+  Publication,
   QueueSnapshot,
   StepId,
 } from '@shared/types';
@@ -26,7 +27,9 @@ import {
 import { runBrain, type BrainEvent } from './brain/claudeCli';
 import * as P from './brain/prompts';
 import { episodeSlug, serieSlug } from './playbookParse';
-import { loadLibrary, seriesFacts, stepContext } from './playbook';
+import { stepContext } from './playbook';
+import { getSource } from './sources';
+import { toTeamStatus } from '@shared/progress';
 import { generateWithCodex } from './providers/codexImage';
 import { provider } from './providers/registry';
 import { synthesize } from './providers/voices';
@@ -90,19 +93,29 @@ export class Pipeline {
 
   // ── Episodes ──────────────────────────────────────────────────────────────────────────────
 
-  library(): LibraryItem[] {
-    const items = loadLibrary(activePlaybook(loadSettings()));
-    const byFolder = new Map(this.list().map((e) => [this.relFolder(e), e.id]));
-    return items.map((i) => ({ ...i, episodeId: i.folder ? byFolder.get(i.folder) : this.findByKey(i.key) }));
-  }
-
-  private findByKey(key: string): string | undefined {
-    return this.list().find((e) => (e as EpisodeState & { libraryKey?: string }).libraryKey === key)?.id;
+  /** The episodes of the active source, each linked to its local AdFlow episode when there is one. */
+  async library(): Promise<LibraryItem[]> {
+    const settings = loadSettings();
+    const pb = activePlaybook(settings);
+    const src = getSource(settings.episodeSource);
+    const items = await src.list(pb);
+    const locals = this.list();
+    return items.map((i) => {
+      const local =
+        locals.find((e) => e.source?.id === src.id && e.source.episodeId === i.id) ??
+        (i.folder ? locals.find((e) => this.relFolder(e) === i.folder) : undefined) ??
+        // Episodes created before sources existed: same case and title, no source yet.
+        locals.find((e) => !e.source && e.caseNumber === i.caseNumber && e.title === i.title);
+      if (local && !local.source) this.update(local.id, (x) => (x.source = { id: src.id, episodeId: i.id }));
+      const progress = local ? toTeamStatus(local) : undefined;
+      const status = i.status === 'publicado' ? 'publicado' : (progress?.status ?? i.status);
+      return { ...i, sourceId: src.id, episodeId: local?.id, progress, status, publication: local?.publication ?? i.publication };
+    });
   }
 
   private relFolder(e: EpisodeState): string {
-    const root = resolveIn(activePlaybook(loadSettings()), activePlaybook(loadSettings()).episodesRoot);
-    return path.relative(root, e.dir).replace(/\\/g, '/');
+    const pb = activePlaybook(loadSettings());
+    return path.relative(resolveIn(pb, pb.episodesRoot), e.dir).replace(/\\/g, '/');
   }
 
   list(): EpisodeState[] {
@@ -121,9 +134,15 @@ export class Pipeline {
 
   private update(id: string, fn: (e: EpisodeState) => void): EpisodeState {
     const e = this.get(id);
+    const before = JSON.stringify(toTeamStatus(e));
     fn(e);
     saveEpisode(e);
     this.ev.episode(e);
+    const after = toTeamStatus(e);
+    if (e.source && JSON.stringify(after) !== before) {
+      const settings = loadSettings();
+      getSource(e.source.id).report(activePlaybook(settings), e.source.episodeId, after, settings.userName).catch(() => {});
+    }
     return e;
   }
 
@@ -131,9 +150,10 @@ export class Pipeline {
     return this.update(id, (e) => Object.assign(e, patch));
   }
 
-  createFromLibrary(key: string): EpisodeState {
-    const item = this.library().find((i) => i.key === key);
-    if (!item) throw new Error('Ese caso ya no está en el catálogo.');
+  /** Creates (or opens) the local episode of a source episode and claims it in the source. */
+  async createFromSource(sourceEpisodeId: string): Promise<EpisodeState> {
+    const item = (await this.library()).find((i) => i.id === sourceEpisodeId);
+    if (!item) throw new Error('Ese episodio ya no está en la fuente.');
     if (item.episodeId) return this.get(item.episodeId);
     const settings = loadSettings();
     const pb = activePlaybook(settings);
@@ -142,10 +162,10 @@ export class Pipeline {
     const dir = path.join(root, folder);
     fs.mkdirSync(dir, { recursive: true });
     const [serie, slug] = folder.split('/');
-    const e: EpisodeState & { libraryKey: string } = {
+    const e: EpisodeState = {
       id: folder,
-      libraryKey: key,
       playbookId: pb.id,
+      source: { id: item.sourceId, episodeId: item.id },
       title: item.title,
       serie,
       slug,
@@ -172,6 +192,7 @@ export class Pipeline {
     this.dirs.set(e.id, dir);
     saveEpisode(e);
     this.ev.episode(e);
+    await getSource(item.sourceId).claim(pb, item.id, settings.userName).catch(() => {});
     return e;
   }
 
@@ -190,10 +211,10 @@ export class Pipeline {
         return this.queue.cancel(id, a.step);
     }
     if (a.step === 'script') {
-      if (a.type === 'generate') return this.brainStep(id, 'script', P.scriptPrompt(this.itemFor(id), this.get(id).closingVoice), { fresh: true });
+      if (a.type === 'generate') return this.brainStep(id, 'script', P.scriptPrompt(this.get(id).title, this.get(id).closingVoice), { fresh: true });
       if (a.type === 'regenerate') {
         this.archive(id, 'script', ['guion.md', 'escenas.json']);
-        return this.brainStep(id, 'script', P.scriptPrompt(this.itemFor(id), this.get(id).closingVoice), { fresh: true });
+        return this.brainStep(id, 'script', P.scriptPrompt(this.get(id).title, this.get(id).closingVoice), { fresh: true });
       }
       if (a.type === 'feedback') return this.brainStep(id, 'script', P.scriptFeedbackPrompt(a.message));
     }
@@ -218,6 +239,16 @@ export class Pipeline {
     if (a.step === 'voice') {
       if (a.type === 'generate') return this.generateVoices(id);
     }
+    if (a.step === 'publish') {
+      if (a.type === 'adCopy') return this.brainStep(id, 'publish', P.adCopyPrompt(), { fresh: true });
+      if (a.type === 'feedback') return this.brainStep(id, 'publish', P.adCopyFeedbackPrompt(a.message));
+      if (a.type === 'markPublished') return void this.markPublished(id, a.publication);
+      if (a.type === 'unpublish')
+        return void this.update(id, (e) => {
+          e.publication = undefined;
+          e.steps.publish = { ...e.steps.publish, status: 'review', updatedAt: now() };
+        });
+    }
   }
 
   private approve(id: string, step: StepId): EpisodeState {
@@ -231,9 +262,39 @@ export class Pipeline {
     });
   }
 
-  private itemFor(id: string): LibraryItem | undefined {
-    const e = this.get(id) as EpisodeState & { libraryKey?: string };
-    return this.library().find((i) => i.key === e.libraryKey || i.episodeId === id);
+  /** The brief of the episode as its source tells it (case, characters, phrase…). */
+  private async brief(id: string): Promise<string> {
+    const e = this.get(id);
+    const pb = activePlaybook(loadSettings());
+    let source = e.source;
+    if (!source) {
+      const match = (await this.library()).find((i) => i.episodeId === id);
+      source = match ? { id: match.sourceId, episodeId: match.id } : undefined;
+    }
+    return source ? getSource(source.id).brief(pb, source.episodeId) : '';
+  }
+
+  private markPublished(id: string, publication: Publication): EpisodeState {
+    const user = loadSettings().userName;
+    return this.update(id, (e) => {
+      e.publication = { ...publication, by: publication.by || user || undefined };
+      e.steps.publish = { ...e.steps.publish, status: 'approved', updatedAt: now(), error: undefined };
+      e.current = 'publish';
+    });
+  }
+
+  /** The ad text and link Claude wrote for the publish step. */
+  adCopy(id: string): string | null {
+    const file = path.join(this.get(id).dir, 'anuncio.md');
+    return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+  }
+
+  /** Newest MP4 at the top of the episode folder (where the final render goes). */
+  finalVideo(id: string): { file: string; url: string } | null {
+    const dir = this.get(id).dir;
+    const mp4 = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.mp4')) : [];
+    const pick = mp4.map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs })).sort((a, b) => b.t - a.t)[0]?.f;
+    return pick ? { file: pick, url: fileUrl(path.join(dir, pick)) } : null;
   }
 
   private activity(id: string, step: StepId, kind: ActivityEvent['kind'], text: string) {
@@ -299,7 +360,7 @@ export class Pipeline {
         const settings = loadSettings();
         const pb = activePlaybook(settings);
         const e = this.get(id);
-        const item = this.itemFor(id);
+        const caseBlock = await this.brief(id);
         const ctx = stepContext(pb, step);
         const account = settings.claude.accounts.find((a) => a.id === e.brain.account);
         const onEvent = (b: BrainEvent) => this.activity(id, step, b.kind, b.text);
@@ -312,8 +373,7 @@ export class Pipeline {
               step,
               playbookName: pb.name,
               playbookText: ctx.text,
-              seriesFacts: seriesFacts(pb),
-              caseBlock: item?.block ?? '',
+              caseBlock,
             }),
             sessionId,
             model: e.brain.model || settings.claude.model,
@@ -356,6 +416,7 @@ export class Pipeline {
     if (step === 'script') return check('escenas.json', scriptSchema);
     if (step === 'images') return check('prompts_imagenes.json', imagePromptsSchema);
     if (step === 'videos') return check('prompts_video.json', videoPromptsSchema);
+    if (step === 'publish') return fs.existsSync(path.join(dir, 'anuncio.md')) ? null : 'No se encontró anuncio.md.';
     return null;
   }
 

@@ -1,0 +1,25 @@
+{
+  "name": "Robles.AI · Videos de redes",
+  "always": ["intro", "3", "5", "6", "9"],
+  "sections": {
+    "prep": ["0"],
+    "script": ["0", "1", "1-B", "1-C", "2", "paso1", "4"],
+    "images": ["paso2"],
+    "videos": ["paso3", "paso4", "paso5"],
+    "voice": ["paso6"],
+    "render": ["paso7", "paso8", "paso9", "4", "7", "10"],
+    "publish": ["0", "5", "10"]
+  },
+  "script": {
+    "durationS": [40, 50],
+    "hookTipoIncludes": "clip",
+    "kindCount": { "2d": [3, 4] },
+    "requiredKinds": ["logo"],
+    "lastKind": "final",
+    "mentions": [
+      { "id": "robly", "label": "Robly presente", "pattern": "robly", "missing": "No aparece en ninguna escena" },
+      { "id": "decision", "label": "Una persona decide", "pattern": "decisi|confirma|decide", "missing": "No se ve quién decide" }
+    ]
+  },
+  "closingLine": "[shouting, very excited] ¡Robles punto a i! [excited] ¡Inteligencia artificial que impulsa tu negocio!"
+}

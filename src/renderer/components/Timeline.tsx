@@ -1,7 +1,7 @@
 // The pipeline as an animated timeline: one node per step, a line that fills as steps are
 // approved, a spinning ring on the step that is working and a glow on the step waiting for you.
 import { motion } from 'framer-motion';
-import { Check, Clapperboard, FileText, Film, ImageIcon, Lock, Mic, Settings2, TriangleAlert } from 'lucide-react';
+import { Check, Clapperboard, FileText, Film, ImageIcon, Lock, Mic, Send, Settings2, TriangleAlert } from 'lucide-react';
 import type { EpisodeState, StepId } from '@shared/types';
 import { STEPS } from '@shared/types';
 import { cx, STATUS_LABEL } from './ui';
@@ -13,6 +13,7 @@ export const STEP_ICONS: Record<StepId, typeof FileText> = {
   videos: Clapperboard,
   voice: Mic,
   render: Film,
+  publish: Send,
 };
 
 export function Timeline({ episode, selected, onSelect }: { episode: EpisodeState; selected: StepId; onSelect: (s: StepId) => void }) {
@@ -47,7 +48,7 @@ export function Timeline({ episode, selected, onSelect }: { episode: EpisodeStat
               key={s.id}
               type="button"
               onClick={() => st.status !== 'locked' && onSelect(s.id)}
-              className={cx('no-drag group flex w-24 flex-col items-center text-center', st.status === 'locked' ? 'cursor-not-allowed' : 'cursor-pointer')}
+              className={cx('no-drag group flex w-24 shrink-0 flex-col items-center text-center', st.status === 'locked' ? 'cursor-not-allowed' : 'cursor-pointer')}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.06, duration: 0.35, ease: 'easeOut' }}

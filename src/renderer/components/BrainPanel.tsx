@@ -36,8 +36,8 @@ export function BrainPanel({
   const [message, setMessage] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const working = episode.steps[step].status === 'working';
-  const canChat = (step === 'script' || step === 'images' || step === 'videos') && episode.steps[step].status !== 'locked';
-  const hasOutput = step === 'script' ? !!episode.brain.sessions.script : step === 'images' ? !!episode.brain.sessions.images : !!episode.brain.sessions.videos;
+  const canChat = (step === 'script' || step === 'images' || step === 'videos' || step === 'publish') && episode.steps[step].status !== 'locked';
+  const hasOutput = !!episode.brain.sessions[step];
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
@@ -49,7 +49,9 @@ export function BrainPanel({
     const action =
       step === 'script'
         ? ({ step, type: 'feedback', message: text } as const)
-        : step === 'images'
+        : step === 'publish'
+          ? ({ step, type: 'feedback', message: text } as const)
+          : step === 'images'
           ? ({ step, type: 'feedback', message: text, sceneId: target?.sceneId } as const)
           : ({ step: 'videos', type: 'feedback', message: text, sceneId: target?.sceneId } as const);
     void api.act(episode.id, action);
@@ -137,10 +139,12 @@ export function BrainPanel({
             className={cx(inputCls, 'min-h-[76px] resize-none pr-11 text-[13px]')}
             placeholder={
               !canChat
-                ? 'El chat se activa en Guion, Imágenes y Videos.'
+                ? 'El chat se activa en Guion, Imágenes, Videos y Publicación.'
                 : !hasOutput
                   ? 'Primero genera este paso.'
-                  : step === 'script'
+                  : step === 'publish'
+                    ? 'Ej.: el texto más corto y que mencione la demo gratis…'
+                    : step === 'script'
                     ? 'Ej.: el gancho es muy lento, que el contador aparezca desde el primer cuadro…'
                     : 'Ej.: en la S02 el personaje debe mirar a cámara…'
             }

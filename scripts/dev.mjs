@@ -6,7 +6,7 @@ import { createServer } from 'vite';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-const server = await createServer({ configFile: path.join(root, 'vite.config.ts') });
+const server = await createServer({ configFile: path.join(root, 'vite.config.mts') });
 await server.listen();
 const url = `http://localhost:${server.config.server.port}`;
 

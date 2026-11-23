@@ -4,6 +4,7 @@ import type {
   Capability,
   ClipItem,
   DiagnosticItem,
+  EpisodeSourceInfo,
   EpisodeState,
   ImageItem,
   LibraryItem,
@@ -26,11 +27,13 @@ export interface AdflowApi {
   estimate(providerId: string, units: number): Promise<string>;
   diagnostics(): Promise<DiagnosticItem[]>;
   playbookSections(): Promise<{ id: string; title: string; found: boolean }[]>;
+  playbookConfigOrigin(): Promise<{ origin: 'playbook' | 'preset' | 'empty'; error?: string }>;
+  episodeSources(): Promise<EpisodeSourceInfo[]>;
 
   library(): Promise<LibraryItem[]>;
   episodes(): Promise<EpisodeState[]>;
   episode(id: string): Promise<EpisodeState>;
-  createEpisode(libraryKey: string): Promise<EpisodeState>;
+  createEpisode(sourceEpisodeId: string): Promise<EpisodeState>;
   patchEpisode(id: string, patch: Partial<Pick<EpisodeState, 'providers' | 'voice' | 'closingVoice' | 'videoConfig' | 'brain'>>): Promise<EpisodeState>;
   act(id: string, action: PipelineAction): Promise<void>;
   activity(id: string): Promise<ActivityEvent[]>;
@@ -42,6 +45,8 @@ export interface AdflowApi {
   narration(id: string): Promise<NarrationLine[]>;
   voices(providerId: string): Promise<VoiceOption[]>;
   previewVoice(id: string, text: string): Promise<{ url?: string; error?: string }>;
+  adCopy(id: string): Promise<string | null>;
+  finalVideo(id: string): Promise<{ file: string; url: string } | null>;
 
   openPath(p: string): Promise<void>;
   pickFolder(): Promise<string | null>;
@@ -62,6 +67,10 @@ export const API_METHODS = [
   'estimate',
   'diagnostics',
   'playbookSections',
+  'playbookConfigOrigin',
+  'episodeSources',
+  'adCopy',
+  'finalVideo',
   'library',
   'episodes',
   'episode',

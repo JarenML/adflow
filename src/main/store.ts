@@ -32,19 +32,6 @@ export function writeJson(file: string, value: unknown): void {
   fs.renameSync(tmp, file);
 }
 
-/** Section map of the Robles.AI master prompt (PROMPT_MAESTRO_VIDEO.md). */
-export const ROBLES_SECTIONS: Pick<Playbook, 'always' | 'sections'> = {
-  always: ['intro', '3', '5', '6', '9'],
-  sections: {
-    prep: ['0'],
-    script: ['0', '1', '1-B', '1-C', '2', 'paso1', '4'],
-    images: ['paso2'],
-    videos: ['paso3', 'paso4', 'paso5'],
-    voice: ['paso6'],
-    render: ['paso7', 'paso8', 'paso9', '4', '7', '10'],
-  },
-};
-
 export function defaultPlaybook(rootDir = ''): Playbook {
   return {
     id: 'robles-ai',
@@ -55,7 +42,7 @@ export function defaultPlaybook(rootDir = ''): Playbook {
     trackingFile: 'creative/social/SEGUIMIENTO_SERIES.md',
     episodesRoot: 'creative/social',
     toolsDir: 'creative/social/herramientas',
-    ...ROBLES_SECTIONS,
+    configFile: 'adflow.playbook.json',
   };
 }
 
@@ -71,6 +58,7 @@ export function defaultSettings(): Settings {
   return {
     playbooks: [defaultPlaybook(guessRoblesRoot())],
     activePlaybookId: 'robles-ai',
+    episodeSource: 'playbook-files',
     claude: {
       model: 'opus',
       effort: 'medium',
@@ -98,9 +86,12 @@ export function loadSettings(): Settings {
     playbooks: saved.playbooks?.length ? saved.playbooks : base.playbooks,
   };
   // A playbook saved before its root was found picks it up later.
-  merged.playbooks = merged.playbooks.map((p) =>
-    p.id === 'robles-ai' && !p.rootDir ? { ...p, rootDir: guessRoblesRoot() } : p,
-  );
+  merged.playbooks = merged.playbooks.map((p) => {
+    // Older settings kept the section map here; it now lives in the playbook config.
+    const { always: _a, sections: _s, ...rest } = p as Playbook & { always?: unknown; sections?: unknown };
+    const fixed = { ...rest, configFile: rest.configFile || 'adflow.playbook.json' };
+    return fixed.id === 'robles-ai' && !fixed.rootDir ? { ...fixed, rootDir: guessRoblesRoot() } : fixed;
+  });
   return merged;
 }
 

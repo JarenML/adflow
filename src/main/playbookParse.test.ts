@@ -2,15 +2,15 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  buildLibrary,
   composeSections,
   episodeSlug,
   parseCases,
   parseTracking,
   serieSlug,
   sliceSections,
+  toSourceEpisodes,
 } from './playbookParse';
-import { ROBLES_SECTIONS } from './store';
+import preset from '../../presets/robles-ai.playbook.json';
 
 const sample = `Intro line
 ## 0. DATOS
@@ -64,7 +64,7 @@ const hasPlaybook = fs.existsSync(path.join(social, 'PROMPT_MAESTRO_VIDEO.md'));
 describe.skipIf(!hasPlaybook)('Robles.AI playbook', () => {
   it('has every section the step map asks for', () => {
     const sections = sliceSections(fs.readFileSync(path.join(social, 'PROMPT_MAESTRO_VIDEO.md'), 'utf8'));
-    const ids = [...ROBLES_SECTIONS.always, ...Object.values(ROBLES_SECTIONS.sections).flat()];
+    const ids = [...preset.always, ...Object.values(preset.sections).flat()];
     expect(composeSections(sections, ids).missing).toEqual([]);
   });
 
@@ -73,10 +73,16 @@ describe.skipIf(!hasPlaybook)('Robles.AI playbook', () => {
     const rows = parseTracking(fs.readFileSync(path.join(social, 'SEGUIMIENTO_SERIES.md'), 'utf8'));
     expect(cases.length).toBeGreaterThanOrEqual(12);
     expect(cases.find((c) => c.number === 3)?.title).toBe('La llamada que nadie contestó');
-    const lib = buildLibrary(cases, rows);
-    const dental = lib.find((i) => i.caseNumber === 3)!;
-    expect(dental.produced).toBe(false);
+    const eps = toSourceEpisodes(cases, rows);
+    const dental = eps.find((i) => i.caseNumber === 3)!;
+    expect(dental.status).toBe('pendiente');
+    expect(dental.id).toBe('case:3:la-llamada-que-nadie-contesto');
     expect(dental.summary).toContain('Sofía');
-    expect(lib.filter((i) => i.caseNumber === 1).length).toBe(2);
+    // Tracked episodes use their folder as id, so the link survives new rows in the table.
+    const clinicas = eps.filter((i) => i.caseNumber === 1);
+    expect(clinicas.length).toBe(2);
+    expect(clinicas.every((c) => c.id.startsWith('folder:clinicas/'))).toBe(true);
+    expect(clinicas.every((c) => c.status === 'terminado')).toBe(true);
+    expect(new Set(eps.map((e) => e.id)).size).toBe(eps.length);
   });
 });

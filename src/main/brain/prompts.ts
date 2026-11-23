@@ -1,14 +1,13 @@
 // What the brain is asked to do in each step. The rules come from the playbook (the slice of the
 // master prompt for the step); these texts only add AdFlow's contract: which files to write and
 // in which format, so the app can show them.
-import type { EpisodeState, LibraryItem, StepId } from '@shared/types';
+import type { EpisodeState, StepId } from '@shared/types';
 
 export function systemPrompt(opts: {
   episode: EpisodeState;
   step: StepId;
   playbookName: string;
   playbookText: string;
-  seriesFacts: string;
   caseBlock: string;
 }): string {
   return `# AdFlow · cerebro del episodio
@@ -31,13 +30,9 @@ Reglas de AdFlow (además del playbook):
 
 ${opts.playbookText}
 
-# Datos fijos de la serie
+# Brief del episodio (de la fuente de episodios)
 
-${opts.seriesFacts}
-
-# Caso del catálogo
-
-${opts.caseBlock}
+${opts.caseBlock || 'Sin brief: usa el título del episodio y propón lo que falte en "pendientes".'}
 `;
 }
 
@@ -74,8 +69,8 @@ esos ids. "inicio" y "fin" son segundos acumulados y la suma total cumple la dur
 de notas, nombres de quien habla ni diálogos de personajes, que van en "dialogo". El logo no lleva
 locución y la escena final deja "locucion" en null (su texto fijo lo pone la plantilla).`;
 
-export function scriptPrompt(item: LibraryItem | undefined, closingVoice: string): string {
-  return `Paso 1 del playbook: guion y escenas del episodio «${item?.title ?? ''}».
+export function scriptPrompt(title: string, closingVoice: string): string {
+  return `Paso 1 del playbook: guion y escenas del episodio «${title}».
 
 Escribe en la carpeta actual:
 1. guion.md — tabla segundo a segundo (tiempo, tipo real/2D, escena, locución, texto en pantalla), voces
@@ -151,4 +146,30 @@ Escribe además prompts_firefly.md con los mismos prompts legibles para quien lo
 
 export function videoFeedbackPrompt(sceneId: string | undefined, message: string): string {
   return `La persona revisó ${sceneId ? `el clip de ${sceneId}` : 'los clips'} y pide:\n\n"${message}"\n\nCorrige el prompt afectado en prompts_video.json y en prompts_firefly.md.`;
+}
+
+export function adCopyPrompt(): string {
+  return `Paso de publicación: texto del anuncio.
+
+Lee escenas.json y el brief. Escribe anuncio.md con este formato exacto (en español):
+
+# Texto del anuncio
+(2–4 líneas para el post o el anuncio: gancho, solución y llamada a la acción; usa la FRASE y las
+ETIQUETAS del caso, que no van dentro del video; sin cifras de resultados ni promesas medibles)
+
+# Titular
+(una línea corta para el titular del anuncio)
+
+# Enlace
+(el ENLACE_DEL_ANUNCIO completo según los datos fijos de la serie, con su utm_content)
+
+# utm_content
+(solo el valor de utm_content)
+
+# Hashtags
+(3–6 hashtags, opcionales)`;
+}
+
+export function adCopyFeedbackPrompt(message: string): string {
+  return `La persona revisó el texto del anuncio y pide:\n\n"${message}"\n\nAplícalo en anuncio.md sin cambiar el formato.`;
 }

@@ -1,21 +1,18 @@
-// Production board: every episode in progress, filtered by who has to act next.
+// Production board: the episodes in AdFlow by team status, plus what is waiting for you.
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, Clapperboard, Cpu, ImageIcon, Library, Plus } from 'lucide-react';
-import type { EpisodeState, QueueSnapshot } from '@shared/types';
-import { STEPS } from '@shared/types';
+import { ArrowRight, BellDot, Clapperboard, Cpu, ImageIcon, Library, Plus } from 'lucide-react';
+import type { EpisodeState, QueueSnapshot, TeamStatus } from '@shared/types';
+import { TEAM_STATUSES, TEAM_STATUS_LABEL, toTeamStatus } from '@shared/progress';
 import { api, useLive, useQueue } from '../lib/api';
 import { MiniTimeline } from '../components/Timeline';
-import { Button, cx, Empty, formatDate, StatusPill } from '../components/ui';
+import { Button, cx, Empty, formatDate, TeamStatusPill } from '../components/ui';
 
-type Filter = 'all' | 'waiting' | 'working' | 'done' | 'idle';
+type Filter = 'all' | 'waiting' | TeamStatus;
 
-function bucket(e: EpisodeState): Exclude<Filter, 'all'> {
-  const sts = Object.values(e.steps).map((s) => s.status);
-  if (sts.includes('working')) return 'working';
-  if (e.steps.render.status === 'approved') return 'done';
-  if (sts.includes('review') || sts.includes('error')) return 'waiting';
-  return 'idle';
+/** A step needs the person: waiting for approval or failed. */
+function needsYou(e: EpisodeState): boolean {
+  return Object.values(e.steps).some((s) => s.status === 'review' || s.status === 'error');
 }
 
 function Lanes({ q }: { q?: QueueSnapshot }) {
@@ -53,19 +50,13 @@ export function Dashboard({ onOpen, onLibrary }: { onOpen: (id: string) => void;
   const [filter, setFilter] = useState<Filter>('all');
   const list = episodes ?? [];
   const counts = useMemo(() => {
-    const c = { all: list.length, waiting: 0, working: 0, done: 0, idle: 0 };
-    list.forEach((e) => c[bucket(e)]++);
+    const c: Record<string, number> = { all: list.length, waiting: list.filter(needsYou).length };
+    for (const s of TEAM_STATUSES) c[s] = list.filter((e) => toTeamStatus(e).status === s).length;
     return c;
   }, [list]);
-  const shown = list.filter((e) => filter === 'all' || bucket(e) === filter);
+  const shown = list.filter((e) => filter === 'all' || (filter === 'waiting' ? needsYou(e) : toTeamStatus(e).status === filter));
 
-  const filters: [Filter, string][] = [
-    ['all', 'Todos'],
-    ['waiting', 'Esperando por ti'],
-    ['working', 'Trabajando'],
-    ['done', 'Terminados'],
-    ['idle', 'Inactivos'],
-  ];
+  const filters: [Filter, string][] = [['all', 'Todos'], ...TEAM_STATUSES.map((s) => [s, TEAM_STATUS_LABEL[s]] as [Filter, string])];
 
   return (
     <div className="mx-auto max-w-[1180px] px-8 py-8">
@@ -81,16 +72,25 @@ export function Dashboard({ onOpen, onLibrary }: { onOpen: (id: string) => void;
 
       <Lanes q={q} />
 
-      <div className="mt-6 mb-4 flex flex-wrap gap-1.5">
+      <div className="mt-6 mb-4 flex flex-wrap items-center gap-1.5">
         {filters.map(([id, label]) => (
           <button
             key={id}
             onClick={() => setFilter(id)}
             className={cx('no-drag rounded-full border px-3 py-1 text-[12.5px] font-medium transition-colors', filter === id ? 'border-line-2 bg-panel-2 text-ink' : 'border-line text-mute hover:text-ink')}
           >
-            {label} <span className="ml-1 text-faint">{counts[id]}</span>
+            {label} <span className="ml-1 text-faint">{counts[id] ?? 0}</span>
           </button>
         ))}
+        <button
+          onClick={() => setFilter('waiting')}
+          className={cx(
+            'no-drag ml-auto flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12.5px] font-medium transition-colors',
+            filter === 'waiting' ? 'border-warn/50 bg-warn/10 text-warn' : counts.waiting ? 'border-warn/30 text-warn hover:bg-warn/5' : 'border-line text-faint',
+          )}
+        >
+          <BellDot className="size-3.5" /> Esperando por ti <span className="ml-0.5">{counts.waiting}</span>
+        </button>
       </div>
 
       {!list.length ? (
@@ -107,7 +107,6 @@ export function Dashboard({ onOpen, onLibrary }: { onOpen: (id: string) => void;
       ) : (
         <div className="grid grid-cols-2 gap-3">
           {shown.map((e, i) => {
-            const cur = STEPS.find((s) => s.id === e.current)!;
             return (
               <motion.button
                 key={e.id}
@@ -122,7 +121,7 @@ export function Dashboard({ onOpen, onLibrary }: { onOpen: (id: string) => void;
                     <p className="truncate text-[14px] font-semibold">{e.title}</p>
                     <p className="truncate text-[12px] text-faint">{e.businessType}</p>
                   </div>
-                  <StatusPill status={e.steps[e.current].status} label={cur.label} />
+                  <TeamStatusPill progress={toTeamStatus(e)} />
                 </div>
                 <div className="mt-4 flex items-center justify-between">
                   <MiniTimeline episode={e} />

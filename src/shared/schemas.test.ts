@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { checkScript, sceneDuration, sceneKind, sceneNarration, scriptSchema } from './schemas';
+import { sceneDuration, sceneKind, sceneNarration, scriptSchema } from './schemas';
+import { checkScript, playbookConfigSchema } from './playbookConfig';
+import preset from '../../presets/robles-ai.playbook.json';
 
 describe('scene helpers', () => {
   it('derives kind, duration and narration', () => {
@@ -23,10 +25,10 @@ describe.skipIf(!fs.existsSync(real))('real episode', () => {
   it('parses and passes the structural checks', () => {
     const parsed = scriptSchema.safeParse(JSON.parse(fs.readFileSync(real, 'utf8')));
     expect(parsed.success).toBe(true);
-    const checks = Object.fromEntries(checkScript(parsed.data!).map((c) => [c.id, c.ok]));
+    const checks = Object.fromEntries(checkScript(parsed.data!, playbookConfigSchema.parse(preset)).map((c) => [c.id, c.ok]));
     expect(checks.hook).toBe(true);
-    expect(checks.logo).toBe(true);
-    expect(checks.final).toBe(true);
-    expect(checks.twoD).toBe(true);
+    expect(checks['kind-logo']).toBe(true);
+    expect(checks.last).toBe(true);
+    expect(checks['count-2d']).toBe(true);
   });
 });

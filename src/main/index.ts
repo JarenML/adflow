@@ -3,10 +3,11 @@ import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'elect
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AdflowApi } from '@shared/api';
-import { checkScript } from '@shared/schemas';
+import { checkScript } from '@shared/playbookConfig';
 import { runDiagnostics } from './diagnostics';
 import { Pipeline } from './pipeline';
-import { sectionStatus } from './playbook';
+import { loadConfig, sectionStatus } from './playbook';
+import { sourceInfos } from './sources';
 import { PROVIDERS, SECRET_LABELS, estimate } from './providers/registry';
 import { listVoices } from './providers/voices';
 import { getSecrets, secretStatus, setSecret } from './secrets';
@@ -48,6 +49,13 @@ function createWindow() {
 
   // Screenshot mode for automated checks: ADFLOW_SNAPSHOT=<png> captures the window and quits.
   const snap = process.env.ADFLOW_SNAPSHOT;
+  if (snap || devUrl) {
+    // Renderer errors go to the terminal in development and screenshot runs.
+    win.webContents.on('console-message', (e) => {
+      const { level, message } = e as unknown as { level: string; message: string };
+      if (level === 'error' || level === 'warning') console.log(`[renderer ${level}] ${message}`);
+    });
+  }
   if (snap) {
     win.webContents.once('did-finish-load', () => {
       setTimeout(async () => {
@@ -80,10 +88,14 @@ function registerIpc() {
   handle('estimate', (id: string, units: number) => estimate(id, units));
   handle('diagnostics', () => runDiagnostics(loadSettings()));
   handle('playbookSections', () => sectionStatus(activePlaybook(loadSettings())));
+  handle('playbookConfigOrigin', () => { const c = loadConfig(activePlaybook(loadSettings())); return { origin: c.origin, error: c.error }; });
+  handle('episodeSources', () => sourceInfos());
+  handle('adCopy', (id: string) => pipeline.adCopy(id));
+  handle('finalVideo', (id: string) => pipeline.finalVideo(id));
   handle('library', () => pipeline.library());
   handle('episodes', () => pipeline.list());
   handle('episode', (id: string) => pipeline.get(id));
-  handle('createEpisode', (key: string) => pipeline.createFromLibrary(key));
+  handle('createEpisode', (sourceEpisodeId: string) => pipeline.createFromSource(sourceEpisodeId));
   handle('patchEpisode', (id: string, patch) => pipeline.patch(id, patch));
   handle('act', (id: string, action) => {
     // Long actions run in the background; progress arrives as events.
@@ -93,14 +105,14 @@ function registerIpc() {
   handle('queue', () => pipeline.queue.snapshot());
   handle('script', (id: string) => {
     const r = pipeline.script(id);
-    return { ...r, checks: r.script ? checkScript(r.script) : [] };
+    return { ...r, checks: r.script ? checkScript(r.script, loadConfig(activePlaybook(loadSettings())).config) : [] };
   });
   handle('images', (id: string) => pipeline.images(id));
   handle('clips', (id: string) => pipeline.clips(id));
   handle('narration', (id: string) => pipeline.narration(id));
   handle('voices', (providerId: string) => listVoices(providerId, getSecrets()));
   handle('previewVoice', (id: string, text: string) => pipeline.previewVoice(id, text));
-  handle('openPath', (p: string) => shell.openPath(p).then(() => undefined));
+  handle('openPath', (p: string) => (/^https?:\/\//.test(p) ? shell.openExternal(p) : shell.openPath(p).then(() => undefined)));
   handle('pickFolder', async () => {
     const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
     return r.canceled ? null : r.filePaths[0];

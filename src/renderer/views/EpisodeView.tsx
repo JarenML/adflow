@@ -6,13 +6,15 @@ import { STEPS } from '@shared/types';
 import { api, useEpisode } from '../lib/api';
 import { BrainPanel, type ChatTarget } from '../components/BrainPanel';
 import { Timeline } from '../components/Timeline';
-import { Button, StatusPill, Tag } from '../components/ui';
+import { Button, StatusPill, Tag, TeamStatusPill } from '../components/ui';
 import { PrepStep } from '../steps/PrepStep';
 import { ScriptStep } from '../steps/ScriptStep';
 import { ImagesStep } from '../steps/ImagesStep';
 import { VideosStep } from '../steps/VideosStep';
 import { VoiceStep } from '../steps/VoiceStep';
 import { RenderStep } from '../steps/RenderStep';
+import { PublishStep } from '../steps/PublishStep';
+import { toTeamStatus } from '@shared/progress';
 
 export function EpisodeView({ id, initialStep, onBack }: { id: string; initialStep?: StepId; onBack: () => void }) {
   const episode = useEpisode(id);
@@ -34,6 +36,7 @@ export function EpisodeView({ id, initialStep, onBack }: { id: string; initialSt
     videos: <VideosStep episode={episode} onTarget={setTarget} />,
     voice: <VoiceStep episode={episode} />,
     render: <RenderStep episode={episode} />,
+    publish: <PublishStep episode={episode} />,
   }[step];
 
   return (
@@ -46,6 +49,7 @@ export function EpisodeView({ id, initialStep, onBack }: { id: string; initialSt
           <div className="flex items-center gap-2">
             <h1 className="truncate text-[17px] font-semibold">{episode.title}</h1>
             {episode.caseNumber && <Tag>Caso #{episode.caseNumber}</Tag>}
+            <TeamStatusPill progress={toTeamStatus(episode)} />
           </div>
           <p className="truncate text-[12px] text-faint">
             {episode.businessType} · {episode.solution}

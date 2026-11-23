@@ -2,7 +2,7 @@
 
 Desktop studio that turns a video **playbook** into a visual production pipeline:
 
-**Preparación → Guion → Imágenes → Videos → Voz del narrador → Render final**
+**Preparación → Guion → Imágenes → Videos → Voz del narrador → Render final → Publicación**
 
 Each step ends waiting for a person: you review what was produced, ask Claude for changes in a
 side chat, and approve it to move on. Several episodes advance at the same time through a work
@@ -19,6 +19,9 @@ videos (`creative/social/PROMPT_MAESTRO_VIDEO.md` in the robles.ai repo).
 | **Brain** | The Claude Code installed on this computer, run headless (`claude -p --output-format stream-json`) with the person's own subscription. AdFlow never sees a password or API key. Each step keeps its session, so a correction in the chat resumes it. |
 | **Playbook** | Read from disk on every run. The master prompt is cut into sections (`## N.`, `### N-X.`, `**Paso N.**`) and each step gets only its sections plus the rules that always apply (`Settings → Playbook` shows the map). |
 | **Files** | The brain writes the same files the team already uses (`guion.md`, `escenas.json`, `prompts_imagenes.json`, `prompts_video.json`) in the episode folder. An episode made by hand and one made with AdFlow are interchangeable. AdFlow's own state goes in `<episode>/.adflow/`. |
+| **Episode sources** | Plugins that say which episodes exist and hear about their progress (`src/main/sources/`: `list`, `brief`, `claim`, `report`). Today: **Archivos del playbook** (the catalog and tracking files, local only). Next: **Producción de redes**, the team admin in robles.ai. Each local episode stores its source and a stable id from it. |
+| **Team statuses** | Four statuses shared by AdFlow and the team: Pendiente, En producción (with the current step), Terminado (render approved), Publicado (marked in the Publicación step). `src/shared/progress.ts` (`toTeamStatus`) is the only place that derives them; the UI shows them and the source receives them. |
+| **Playbook config** | `adflow.playbook.json` in the playbook repo: sections of the master prompt per step and the script checks. Until the repo has one, AdFlow uses its preset (`presets/robles-ai.playbook.json`), so the app itself carries no brand rules. |
 | **Providers** | Plugins per capability (brain, image, video, voice, music). Paid providers are listed but **blocked** until they are implemented and `Permitir proveedores con créditos` is on. |
 | **Queue** | Lanes with their own limits: Claude sessions, images, voice/render. |
 
@@ -74,7 +77,9 @@ scripts/         dev, build, start, snapshot
 
 ## Roadmap
 
-1. **Foundations** — playbook tools without hard-coded paths (in the playbook repo).
+0. **Decoupling** ✅ — episode sources as plugins, stable episode ids, the four team statuses, playbook config out of the code, Publicación step (ad text and link by Claude, mark as published).
+1. **Foundations** — playbook tools without hard-coded paths (in the playbook repo); move the preset to `robles.ai/adflow.playbook.json`.
+1b. **Team admin** — «Producción de redes» in the robles.ai admin and its episode source in AdFlow.
 2. **Skeleton + script** ✅ — app, library, timeline, preparation, script with Claude and chat.
 3. **Images** ✅ (Codex) — gallery, per-image correction, continuity references.
 4. **Voice** — temporary voices ✅; ElevenLabs/HeyGen generation with per-spend confirmation.

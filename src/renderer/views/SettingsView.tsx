@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BookOpen, Brain, CheckCircle2, CircleAlert, CircleDashed, FolderOpen, Gauge, KeyRound, Plug, Plus, RefreshCw, Stethoscope, Trash2 } from 'lucide-react';
-import type { Capability, DiagnosticItem, ProviderInfo, Settings } from '@shared/types';
+import type { Capability, DiagnosticItem, EpisodeSourceInfo, ProviderInfo, Settings } from '@shared/types';
 import { api } from '../lib/api';
 import { Button, Card, cx, Field, inputCls, SectionTitle, Select, Tag } from '../components/ui';
 import { billingTag } from '../steps/PrepStep';
@@ -18,6 +18,8 @@ export function SettingsView() {
   const [diag, setDiag] = useState<DiagnosticItem[]>();
   const [sections, setSections] = useState<{ id: string; title: string; found: boolean }[]>([]);
   const [saved, setSaved] = useState(false);
+  const [sources, setSources] = useState<EpisodeSourceInfo[]>([]);
+  const [cfgOrigin, setCfgOrigin] = useState<{ origin: string; error?: string }>();
 
   useEffect(() => {
     api.getSettings().then(setS);
@@ -25,6 +27,8 @@ export function SettingsView() {
     api.secretStatus().then(setSecrets);
     api.secretLabels().then(setLabels);
     api.playbookSections().then(setSections).catch(() => setSections([]));
+    api.episodeSources().then(setSources);
+    api.playbookConfigOrigin().then(setCfgOrigin);
   }, []);
   useEffect(() => {
     if (tab === 'diagnostics' && !diag) api.diagnostics().then(setDiag);
@@ -37,7 +41,10 @@ export function SettingsView() {
     await api.saveSettings(next);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
-    if (tab === 'playbook') api.playbookSections().then(setSections).catch(() => setSections([]));
+    if (tab === 'playbook') {
+      api.playbookSections().then(setSections).catch(() => setSections([]));
+      api.playbookConfigOrigin().then(setCfgOrigin);
+    }
   };
   const setPb = (patch: Partial<typeof pb>) => save({ ...s, playbooks: s.playbooks.map((p) => (p.id === pb.id ? { ...p, ...patch } : p)) });
 
@@ -70,6 +77,38 @@ export function SettingsView() {
         {tab === 'playbook' && (
           <>
             <Card className="p-5">
+              <SectionTitle title="Fuente de episodios" hint="De dónde salen los episodios de la biblioteca y a dónde AdFlow informa el avance." />
+              <div className="space-y-2">
+                {sources.map((src) => (
+                  <label
+                    key={src.id}
+                    className={cx(
+                      'no-drag flex items-start gap-3 rounded-xl border px-4 py-3',
+                      s.episodeSource === src.id ? 'border-brand/50 bg-brand/5' : 'border-line bg-panel-2/30',
+                      src.implemented ? 'cursor-pointer' : 'opacity-60',
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      className="mt-1 accent-[#7c5cff]"
+                      name="episode-source"
+                      disabled={!src.implemented}
+                      checked={s.episodeSource === src.id}
+                      onChange={() => save({ ...s, episodeSource: src.id })}
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-[13px] font-semibold">{src.name}</p>
+                        <Tag tone={src.shared ? 'cyan' : 'default'}>{src.shared ? 'Compartida con el equipo' : 'Solo esta computadora'}</Tag>
+                        {!src.implemented && <Tag>Próximamente</Tag>}
+                      </div>
+                      <p className="mt-0.5 text-[12px] text-faint">{src.description}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </Card>
+            <Card className="p-5">
               <SectionTitle title="Playbook activo" hint="AdFlow lee las reglas del playbook desde su propio repositorio; nunca lo copia." />
               <div className="space-y-4">
                 <Field label="Nombre">
@@ -90,6 +129,7 @@ export function SettingsView() {
                       ['casesFile', 'Catálogo de casos'],
                       ['trackingFile', 'Seguimiento'],
                       ['episodesRoot', 'Carpeta de episodios'],
+                      ['configFile', 'Configuración de AdFlow'],
                     ] as const
                   ).map(([k, label]) => (
                     <Field key={k} label={label}>
@@ -100,7 +140,23 @@ export function SettingsView() {
               </div>
             </Card>
             <Card className="p-5">
-              <SectionTitle title="Secciones que recibe Claude" hint="El prompt maestro se corta por secciones: cada paso recibe solo las suyas más las reglas de siempre." />
+              <SectionTitle
+                title="Secciones que recibe Claude"
+                hint="El prompt maestro se corta por secciones: cada paso recibe solo las suyas más las reglas de siempre."
+                right={
+                  cfgOrigin && (
+                    <Tag tone={cfgOrigin.origin === 'playbook' ? 'ok' : cfgOrigin.origin === 'preset' ? 'warn' : 'bad'}>
+                      {cfgOrigin.origin === 'playbook' ? `Desde ${pb.configFile}` : cfgOrigin.origin === 'preset' ? 'Preset de AdFlow' : 'Sin configuración'}
+                    </Tag>
+                  )
+                }
+              />
+              {cfgOrigin?.origin === 'preset' && (
+                <p className="mb-3 text-[11.5px] text-faint">
+                  El repo del playbook aún no tiene <span className="font-mono">{pb.configFile}</span>; se usa la copia que trae AdFlow. Al agregarlo al repo, el equipo comparte la misma configuración.
+                </p>
+              )}
+              {cfgOrigin?.error && <p className="mb-3 text-[11.5px] text-bad">{cfgOrigin.error}</p>}
               <div className="grid grid-cols-3 gap-1.5">
                 {sections.map((sec) => (
                   <div key={sec.id} className="flex items-center gap-2 rounded-lg border border-line bg-panel-2/30 px-2.5 py-1.5 text-[12px]">
