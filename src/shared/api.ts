@@ -29,6 +29,8 @@ export interface AdflowApi {
   playbookSections(): Promise<{ id: string; title: string; found: boolean }[]>;
   playbookConfigOrigin(): Promise<{ origin: 'playbook' | 'preset' | 'empty'; error?: string }>;
   episodeSources(): Promise<EpisodeSourceInfo[]>;
+  /** Saves the admin address (and a new token, if given) and checks them; returns who the token belongs to. */
+  teamConnect(url: string, token?: string): Promise<{ name: string; email: string }>;
 
   library(): Promise<LibraryItem[]>;
   episodes(): Promise<EpisodeState[]>;
@@ -69,6 +71,7 @@ export const API_METHODS = [
   'playbookSections',
   'playbookConfigOrigin',
   'episodeSources',
+  'teamConnect',
   'adCopy',
   'finalVideo',
   'library',

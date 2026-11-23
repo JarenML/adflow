@@ -157,6 +157,8 @@ export class Pipeline {
     if (item.episodeId) return this.get(item.episodeId);
     const settings = loadSettings();
     const pb = activePlaybook(settings);
+    // Take it in the source first: if someone else has it, nothing is created here.
+    await getSource(item.sourceId).claim(pb, item.id, settings.userName);
     const root = resolveIn(pb, pb.episodesRoot);
     const folder = item.folder ?? `${serieSlug(item.businessType)}/${episodeSlug(item.title)}`;
     const dir = path.join(root, folder);
@@ -192,7 +194,6 @@ export class Pipeline {
     this.dirs.set(e.id, dir);
     saveEpisode(e);
     this.ev.episode(e);
-    await getSource(item.sourceId).claim(pb, item.id, settings.userName).catch(() => {});
     return e;
   }
 

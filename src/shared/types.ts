@@ -176,6 +176,8 @@ export interface Settings {
   activePlaybookId: string;
   /** Where the list of episodes comes from (see src/main/sources). */
   episodeSource: string;
+  /** Team admin («Producción de redes»): its address and who the token belongs to. The token itself is a secret. */
+  team: { url: string; userName?: string };
   claude: { model: string; effort: 'low' | 'medium' | 'high'; accounts: ClaudeAccount[]; defaultAccount: string };
   defaults: Record<Capability, string>;
   concurrency: { brain: number; image: number; render: number };

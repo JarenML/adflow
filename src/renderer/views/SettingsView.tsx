@@ -20,9 +20,15 @@ export function SettingsView() {
   const [saved, setSaved] = useState(false);
   const [sources, setSources] = useState<EpisodeSourceInfo[]>([]);
   const [cfgOrigin, setCfgOrigin] = useState<{ origin: string; error?: string }>();
+  const [teamUrl, setTeamUrl] = useState('');
+  const [teamToken, setTeamToken] = useState('');
+  const [teamState, setTeamState] = useState<{ busy?: boolean; ok?: string; error?: string }>({});
 
   useEffect(() => {
-    api.getSettings().then(setS);
+    api.getSettings().then((x) => {
+      setS(x);
+      setTeamUrl(x.team?.url ?? '');
+    });
     api.providers().then(setProviders);
     api.secretStatus().then(setSecrets);
     api.secretLabels().then(setLabels);
@@ -106,6 +112,39 @@ export function SettingsView() {
                     </div>
                   </label>
                 ))}
+              </div>
+              <div className="mt-4 rounded-xl border border-line bg-panel-2/30 p-4">
+                <p className="text-[13px] font-semibold">Conexión con «Producción de redes»</p>
+                <p className="mt-0.5 text-[12px] text-faint">Genera tu token en el admin: Producción de redes → Conectar AdFlow. Se guarda cifrado en esta computadora.</p>
+                <div className="mt-3 grid grid-cols-[1fr_1fr_auto] items-end gap-3">
+                  <Field label="Dirección del admin">
+                    <input className={inputCls} placeholder="https://robles.ai" value={teamUrl} onChange={(e) => setTeamUrl(e.target.value)} />
+                  </Field>
+                  <Field label="Token personal">
+                    <input className={inputCls} type="password" placeholder={secrets['team-token'] ? '•••••••• (guardado)' : 'adflow_…'} value={teamToken} onChange={(e) => setTeamToken(e.target.value)} />
+                  </Field>
+                  <Button
+                    loading={teamState.busy}
+                    disabled={!teamUrl.trim() || (!teamToken.trim() && !secrets['team-token'])}
+                    onClick={async () => {
+                      setTeamState({ busy: true });
+                      try {
+                        const me = await api.teamConnect(teamUrl, teamToken || undefined);
+                        setTeamToken('');
+                        setSecrets(await api.secretStatus());
+                        setS(await api.getSettings());
+                        setTeamState({ ok: `Conectado como ${me.name}` });
+                      } catch (err) {
+                        setTeamState({ error: String((err as Error).message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '') });
+                      }
+                    }}
+                  >
+                    Conectar
+                  </Button>
+                </div>
+                {teamState.ok && <p className="mt-2 text-[12px] text-ok">{teamState.ok}</p>}
+                {teamState.error && <p className="mt-2 text-[12px] text-bad">{teamState.error}</p>}
+                {!teamState.ok && !teamState.error && s.team?.userName && <p className="mt-2 text-[12px] text-faint">Última conexión como {s.team.userName}.</p>}
               </div>
             </Card>
             <Card className="p-5">

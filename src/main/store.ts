@@ -59,6 +59,7 @@ export function defaultSettings(): Settings {
     playbooks: [defaultPlaybook(guessRoblesRoot())],
     activePlaybookId: 'robles-ai',
     episodeSource: 'playbook-files',
+    team: { url: '' },
     claude: {
       model: 'opus',
       effort: 'medium',
@@ -83,6 +84,7 @@ export function loadSettings(): Settings {
     claude: { ...base.claude, ...saved.claude },
     defaults: { ...base.defaults, ...saved.defaults },
     concurrency: { ...base.concurrency, ...saved.concurrency },
+    team: { ...base.team, ...saved.team },
     playbooks: saved.playbooks?.length ? saved.playbooks : base.playbooks,
   };
   // A playbook saved before its root was found picks it up later.

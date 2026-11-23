@@ -1,11 +1,11 @@
 // Episode library: every episode of the active source, grouped by the four team statuses.
 // Select several pending ones to create them and write their scripts in one batch.
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { CircleDashed, Layers, Play, Search, Wand2 } from 'lucide-react';
+import { CircleDashed, Layers, Play, RefreshCw, Search, Wand2 } from 'lucide-react';
 import type { LibraryItem, TeamStatus } from '@shared/types';
 import { TEAM_STATUSES, TEAM_STATUS_LABEL } from '@shared/progress';
-import { api, useLive } from '../lib/api';
+import { api } from '../lib/api';
 import { Button, cx, Empty, inputCls, Tag, TeamStatusPill } from '../components/ui';
 
 const TAB_LABEL: Record<TeamStatus, string> = {
@@ -16,11 +16,40 @@ const TAB_LABEL: Record<TeamStatus, string> = {
 };
 
 export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
-  const [items, reload] = useLive(() => api.library(), []);
+  const [items, setItems] = useState<LibraryItem[]>();
+  const [loadError, setLoadError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  /** Loads the library from the episode source (the admin may be slow or unreachable). */
+  const reload = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      setItems(await api.library());
+      setLoadError('');
+    } catch (err) {
+      setLoadError(String((err as Error)?.message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
+      setItems((prev) => prev ?? []);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+  // On open, and every time the window gets focus again (changes made in the admin show up).
+  useEffect(() => {
+    void reload();
+    const onFocus = () => void reload();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [reload]);
   const [tab, setTab] = useState<TeamStatus>('pendiente');
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [me, setMe] = useState<string>();
+  useEffect(() => {
+    api.getSettings().then((s) => setMe(s.episodeSource === 'produccion-redes' ? s.team?.userName : undefined));
+  }, []);
+  const takenByOther = (i: LibraryItem) => !i.episodeId && !!i.assignee && !!me && i.assignee !== me;
+  const clean = (err: unknown) => String((err as Error)?.message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
   const list = items ?? [];
   const counts = useMemo(() => Object.fromEntries(TEAM_STATUSES.map((s) => [s, list.filter((i) => i.status === s).length])) as Record<TeamStatus, number>, [list]);
   const shown = useMemo(
@@ -32,16 +61,26 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
   );
 
   const open = async (i: LibraryItem) => {
-    const e = await api.createEpisode(i.id);
-    reload();
-    onOpen(e.id);
+    setError('');
+    try {
+      const e = await api.createEpisode(i.id);
+      reload();
+      onOpen(e.id);
+    } catch (err) {
+      setError(clean(err));
+      reload();
+    }
   };
 
   /** Creates the selected episodes and starts their scripts; the queue runs them in parallel. */
   const batch = async () => {
     setBusy(true);
     for (const id of picked) {
-      const e = await api.createEpisode(id);
+      const e = await api.createEpisode(id).catch((err) => {
+        setError(clean(err));
+        return null;
+      });
+      if (!e) continue;
       if (e.steps.prep.status !== 'approved') await api.act(e.id, { step: 'prep', type: 'approve' });
       if (e.steps.script.status !== 'review' && e.steps.script.status !== 'approved') await api.act(e.id, { step: 'script', type: 'generate' });
     }
@@ -57,11 +96,16 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
           <h1 className="text-2xl font-semibold tracking-tight">Biblioteca de episodios</h1>
           <p className="mt-1 text-[13px] text-mute">Todos los episodios de la fuente elegida en Ajustes, por estado.</p>
         </div>
+        <div className="flex items-center gap-2">
+          <Button icon={<RefreshCw className={cx('size-4', refreshing && 'animate-spin')} />} disabled={refreshing} onClick={() => void reload()}>
+            Actualizar
+          </Button>
         {picked.length > 0 && (
           <Button variant="primary" loading={busy} icon={<Layers className="size-4" />} onClick={batch}>
             Generar {picked.length} guion{picked.length > 1 ? 'es' : ''} en lote
           </Button>
         )}
+        </div>
       </div>
 
       <div className="mb-4 flex items-center gap-3">
@@ -78,6 +122,9 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
         </div>
       </div>
 
+      {loadError && <div className="selectable mb-4 rounded-xl border border-warn/30 bg-warn/5 px-4 py-3 text-[12.5px] text-warn">No se pudo cargar la fuente de episodios: {loadError}</div>}
+      {error && <div className="selectable mb-4 rounded-xl border border-bad/30 bg-bad/5 px-4 py-3 text-[12.5px] text-bad">{error}</div>}
+
       {!items ? null : !list.length ? (
         <Empty icon={<CircleDashed className="size-5" />} title="La fuente no tiene episodios" hint="Revisa la fuente de episodios y la carpeta del playbook en Ajustes." />
       ) : !shown.length ? (
@@ -86,7 +133,7 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
         <div className="space-y-2">
           {shown.map((i, idx) => {
             const sel = picked.includes(i.id);
-            const selectable = i.status === 'pendiente' && !i.episodeId;
+            const selectable = i.status === 'pendiente' && !i.episodeId && !takenByOther(i);
             return (
               <motion.div
                 key={i.id}
@@ -119,9 +166,13 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
                   </p>
                   {i.summary && <p className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-mute">{i.summary}</p>}
                 </div>
+                {takenByOther(i) ? (
+                  <span className="text-[12px] text-faint">Lo lleva {i.assignee}</span>
+                ) : (
                 <Button size="sm" variant={i.episodeId ? 'secondary' : 'ghost'} icon={i.episodeId ? <Play className="size-3.5" /> : <Wand2 className="size-3.5" />} onClick={() => open(i)}>
                   {i.episodeId ? 'Abrir' : i.status === 'pendiente' ? 'Crear' : 'Traer a AdFlow'}
                 </Button>
+                )}
               </motion.div>
             );
           })}

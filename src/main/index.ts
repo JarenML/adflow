@@ -8,6 +8,7 @@ import { runDiagnostics } from './diagnostics';
 import { Pipeline } from './pipeline';
 import { loadConfig, sectionStatus } from './playbook';
 import { sourceInfos } from './sources';
+import { checkTeamConnection, TEAM_TOKEN_SECRET } from './sources/teamAdmin';
 import { PROVIDERS, SECRET_LABELS, estimate } from './providers/registry';
 import { listVoices } from './providers/voices';
 import { getSecrets, secretStatus, setSecret } from './secrets';
@@ -90,6 +91,15 @@ function registerIpc() {
   handle('playbookSections', () => sectionStatus(activePlaybook(loadSettings())));
   handle('playbookConfigOrigin', () => { const c = loadConfig(activePlaybook(loadSettings())); return { origin: c.origin, error: c.error }; });
   handle('episodeSources', () => sourceInfos());
+  handle('teamConnect', async (url: string, newToken?: string) => {
+    const s = loadSettings();
+    saveSettings({ ...s, team: { ...s.team, url: url.trim() } });
+    if (newToken) setSecret(TEAM_TOKEN_SECRET, newToken.trim());
+    const me = await checkTeamConnection();
+    const after = loadSettings();
+    saveSettings({ ...after, team: { ...after.team, userName: me.name } });
+    return me;
+  });
   handle('adCopy', (id: string) => pipeline.adCopy(id));
   handle('finalVideo', (id: string) => pipeline.finalVideo(id));
   handle('library', () => pipeline.library());
