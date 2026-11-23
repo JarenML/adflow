@@ -152,6 +152,8 @@ export interface EpisodeSourceInfo {
 export interface Playbook {
   id: string;
   name: string;
+  /** folder: read from a repo on this computer; team: downloaded from the team admin into AdFlow's storage. */
+  origin?: 'folder' | 'team';
   /** Root of the repository that holds the playbook (e.g. a clone of robles.ai). */
   rootDir: string;
   masterPrompt: string;
@@ -184,6 +186,19 @@ export interface Settings {
   /** Paid providers stay blocked until this is on (and each spend is still confirmed). */
   allowPaidProviders: boolean;
   userName: string;
+  /** Where episode folders are created. Empty = AdFlow's own storage (<app data>/episodios). */
+  storageDir: string;
+}
+
+/** State of the playbook copy downloaded from the team admin. */
+export interface PlaybookSyncStatus {
+  version?: string;
+  files: number;
+  syncedAt?: string;
+  /** Files downloaded by the last sync. */
+  changed?: number;
+  error?: string;
+  syncing?: boolean;
 }
 
 export interface ActivityEvent {

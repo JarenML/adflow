@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BookOpen, Brain, CheckCircle2, CircleAlert, CircleDashed, FolderOpen, Gauge, KeyRound, Plug, Plus, RefreshCw, Stethoscope, Trash2 } from 'lucide-react';
-import type { Capability, DiagnosticItem, EpisodeSourceInfo, ProviderInfo, Settings } from '@shared/types';
+import type { Capability, DiagnosticItem, EpisodeSourceInfo, PlaybookSyncStatus, ProviderInfo, Settings } from '@shared/types';
 import { api } from '../lib/api';
 import { Button, Card, cx, Field, inputCls, SectionTitle, Select, Tag } from '../components/ui';
 import { billingTag } from '../steps/PrepStep';
@@ -23,6 +23,21 @@ export function SettingsView() {
   const [teamUrl, setTeamUrl] = useState('');
   const [teamToken, setTeamToken] = useState('');
   const [teamState, setTeamState] = useState<{ busy?: boolean; ok?: string; error?: string }>({});
+  const [pbStatus, setPbStatus] = useState<PlaybookSyncStatus>();
+  const [storage, setStorage] = useState('');
+
+  /** Everything the Playbook tab shows that depends on the active playbook. */
+  const refreshPlaybook = () => {
+    api.playbookSections().then(setSections).catch(() => setSections([]));
+    api.playbookConfigOrigin().then(setCfgOrigin);
+    api.playbookStatus().then(setPbStatus);
+    api.storagePath().then(setStorage);
+  };
+  const syncPlaybook = async () => {
+    setPbStatus((x) => ({ files: 0, ...x, syncing: true, error: undefined }));
+    setPbStatus(await api.playbookSync());
+    refreshPlaybook();
+  };
 
   useEffect(() => {
     api.getSettings().then((x) => {
@@ -32,9 +47,8 @@ export function SettingsView() {
     api.providers().then(setProviders);
     api.secretStatus().then(setSecrets);
     api.secretLabels().then(setLabels);
-    api.playbookSections().then(setSections).catch(() => setSections([]));
     api.episodeSources().then(setSources);
-    api.playbookConfigOrigin().then(setCfgOrigin);
+    refreshPlaybook();
   }, []);
   useEffect(() => {
     if (tab === 'diagnostics' && !diag) api.diagnostics().then(setDiag);
@@ -47,11 +61,9 @@ export function SettingsView() {
     await api.saveSettings(next);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
-    if (tab === 'playbook') {
-      api.playbookSections().then(setSections).catch(() => setSections([]));
-      api.playbookConfigOrigin().then(setCfgOrigin);
-    }
+    if (tab === 'playbook') refreshPlaybook();
   };
+  const isTeam = s.episodeSource === 'produccion-redes';
   const setPb = (patch: Partial<typeof pb>) => save({ ...s, playbooks: s.playbooks.map((p) => (p.id === pb.id ? { ...p, ...patch } : p)) });
 
   const tabs: [Tab, string, typeof BookOpen][] = [
@@ -134,6 +146,7 @@ export function SettingsView() {
                         setSecrets(await api.secretStatus());
                         setS(await api.getSettings());
                         setTeamState({ ok: `Conectado como ${me.name}` });
+                        void syncPlaybook();
                       } catch (err) {
                         setTeamState({ error: String((err as Error).message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '') });
                       }
@@ -147,8 +160,64 @@ export function SettingsView() {
                 {!teamState.ok && !teamState.error && s.team?.userName && <p className="mt-2 text-[12px] text-faint">Última conexión como {s.team.userName}.</p>}
               </div>
             </Card>
+            {isTeam && (
+              <Card className="p-5">
+                <SectionTitle
+                  title="Playbook del equipo"
+                  hint="Viene del admin: prompts maestros, configuración de AdFlow, plantillas y el Robly oficial. Se edita en el repo de robles.ai y AdFlow baja los cambios solo."
+                  right={
+                    <Button size="sm" icon={<RefreshCw className="size-4" />} loading={pbStatus?.syncing} onClick={() => void syncPlaybook()}>
+                      Actualizar ahora
+                    </Button>
+                  }
+                />
+                <div className="grid grid-cols-3 gap-3">
+                  {(
+                    [
+                      ['Versión', pbStatus?.version ?? '—'],
+                      ['Archivos', String(pbStatus?.files ?? 0)],
+                      ['Actualizado', pbStatus?.syncedAt ? new Date(pbStatus.syncedAt).toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'short' }) : 'Nunca'],
+                    ] as const
+                  ).map(([label, value]) => (
+                    <div key={label} className="rounded-xl border border-line bg-panel-2/40 px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-wide text-faint">{label}</p>
+                      <p className={cx('mt-1 text-[14px] font-semibold', label === 'Versión' && 'font-mono text-[13px]')}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+                {pbStatus?.error && <p className="mt-3 text-[12px] text-bad">No se pudo actualizar: {pbStatus.error}{pbStatus.version ? ' Se usa la última copia descargada.' : ''}</p>}
+                {!pbStatus?.error && pbStatus?.changed ? <p className="mt-3 text-[12px] text-ok">Última actualización: {pbStatus.changed} archivo(s) nuevos o cambiados.</p> : null}
+              </Card>
+            )}
+            {isTeam && (
+              <Card className="p-5">
+                <SectionTitle title="Dónde se guardan los episodios" hint="Cada episodio es una carpeta con su guion, imágenes, clips y voces. Los videos pesan: puedes llevarla a otro disco." />
+                <div className="flex items-center gap-2">
+                  <input className={cx(inputCls, 'font-mono text-[12px]')} value={storage} readOnly />
+                  <Button icon={<FolderOpen className="size-4" />} onClick={() => api.openPath(storage)}>
+                    Abrir
+                  </Button>
+                  <Button
+                    onClick={async () => {
+                      const d = await api.pickFolder();
+                      if (d) await save({ ...s, storageDir: d });
+                      api.storagePath().then(setStorage);
+                    }}
+                  >
+                    Cambiar
+                  </Button>
+                  {s.storageDir && (
+                    <Button variant="ghost" onClick={async () => { await save({ ...s, storageDir: '' }); api.storagePath().then(setStorage); }}>
+                      Usar la de AdFlow
+                    </Button>
+                  )}
+                </div>
+                <p className="mt-2 text-[11.5px] text-faint">Los episodios nuevos se crean aquí; los que ya existen se quedan donde están. El guion aprobado de cada uno se guarda además en el admin.</p>
+              </Card>
+            )}
+            {!isTeam && (
             <Card className="p-5">
-              <SectionTitle title="Playbook activo" hint="AdFlow lee las reglas del playbook desde su propio repositorio; nunca lo copia." />
+              <SectionTitle title="Playbook activo" hint="AdFlow lee las reglas del playbook desde un repositorio de esta computadora." />
               <div className="space-y-4">
                 <Field label="Nombre">
                   <input className={inputCls} value={pb.name} onChange={(e) => setPb({ name: e.target.value })} />
@@ -178,6 +247,7 @@ export function SettingsView() {
                 </div>
               </div>
             </Card>
+            )}
             <Card className="p-5">
               <SectionTitle
                 title="Secciones que recibe Claude"
@@ -185,12 +255,12 @@ export function SettingsView() {
                 right={
                   cfgOrigin && (
                     <Tag tone={cfgOrigin.origin === 'playbook' ? 'ok' : cfgOrigin.origin === 'preset' ? 'warn' : 'bad'}>
-                      {cfgOrigin.origin === 'playbook' ? `Desde ${pb.configFile}` : cfgOrigin.origin === 'preset' ? 'Preset de AdFlow' : 'Sin configuración'}
+                      {cfgOrigin.origin === 'playbook' ? (isTeam ? 'Desde el playbook del equipo' : `Desde ${pb.configFile}`) : cfgOrigin.origin === 'preset' ? 'Preset de AdFlow' : 'Sin configuración'}
                     </Tag>
                   )
                 }
               />
-              {cfgOrigin?.origin === 'preset' && (
+              {cfgOrigin?.origin === 'preset' && !isTeam && (
                 <p className="mb-3 text-[11.5px] text-faint">
                   El repo del playbook aún no tiene <span className="font-mono">{pb.configFile}</span>; se usa la copia que trae AdFlow. Al agregarlo al repo, el equipo comparte la misma configuración.
                 </p>

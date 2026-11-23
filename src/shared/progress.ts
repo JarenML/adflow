@@ -22,7 +22,8 @@ export const TEAM_STATUS_HINT: Record<TeamStatus, string> = {
 export function toTeamStatus(e: Pick<EpisodeState, 'steps' | 'current' | 'publication'>): TeamProgress {
   if (e.publication) return { status: 'publicado', step: 'publish', publication: e.publication };
   if (e.steps.render.status === 'approved') return { status: 'terminado', step: 'publish' };
-  if (e.steps.prep.status !== 'approved') return { status: 'pendiente' };
+  // An episode that exists in AdFlow was taken by someone: it is in production from Preparación on,
+  // the same thing the admin shows as soon as it is claimed.
   const step = e.current;
   const st = e.steps[step]?.status;
   return { status: 'en_produccion', step, waitingForYou: st === 'review', error: st === 'error' };

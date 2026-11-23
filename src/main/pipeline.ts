@@ -29,6 +29,7 @@ import * as P from './brain/prompts';
 import { episodeSlug, serieSlug } from './playbookParse';
 import { stepContext } from './playbook';
 import { getSource } from './sources';
+import { ensureTeamPlaybook } from './teamPlaybook';
 import { toTeamStatus } from '@shared/progress';
 import { generateWithCodex } from './providers/codexImage';
 import { provider } from './providers/registry';
@@ -96,17 +97,22 @@ export class Pipeline {
   /** The episodes of the active source, each linked to its local AdFlow episode when there is one. */
   async library(): Promise<LibraryItem[]> {
     const settings = loadSettings();
+    // The team playbook is refreshed now and then; a failed refresh never blocks the list.
+    if (settings.episodeSource === 'produccion-redes') await ensureTeamPlaybook().catch(() => undefined);
     const pb = activePlaybook(settings);
     const src = getSource(settings.episodeSource);
     const items = await src.list(pb);
     const locals = this.list();
+    const slash = (p: string) => p.replace(/\\/g, '/');
     return items.map((i) => {
       const local =
         locals.find((e) => e.source?.id === src.id && e.source.episodeId === i.id) ??
-        (i.folder ? locals.find((e) => this.relFolder(e) === i.folder) : undefined) ??
-        // Episodes created before sources existed: same case and title, no source yet.
-        locals.find((e) => !e.source && e.caseNumber === i.caseNumber && e.title === i.title);
-      if (local && !local.source) this.update(local.id, (x) => (x.source = { id: src.id, episodeId: i.id }));
+        // Same episode folder, here or in a repo (episodes made before the playbook came from the admin).
+        (i.folder ? locals.find((e) => this.relFolder(e) === i.folder || slash(e.dir).endsWith(`/${i.folder}`)) : undefined) ??
+        // Same case and title, made with no source or with another one (e.g. the local files before the admin).
+        locals.find((e) => e.source?.id !== src.id && e.caseNumber === i.caseNumber && e.title === i.title);
+      // The link follows the active source, so its progress is reported there.
+      if (local && (local.source?.id !== src.id || local.source.episodeId !== i.id)) this.update(local.id, (x) => (x.source = { id: src.id, episodeId: i.id }));
       const progress = local ? toTeamStatus(local) : undefined;
       const status = i.status === 'publicado' ? 'publicado' : (progress?.status ?? i.status);
       return { ...i, sourceId: src.id, episodeId: local?.id, progress, status, publication: local?.publication ?? i.publication };
@@ -163,6 +169,14 @@ export class Pipeline {
     const folder = item.folder ?? `${serieSlug(item.businessType)}/${episodeSlug(item.title)}`;
     const dir = path.join(root, folder);
     fs.mkdirSync(dir, { recursive: true });
+    // Someone already approved its script on another computer: start from it.
+    if (!fs.existsSync(path.join(dir, 'escenas.json'))) {
+      const saved = await getSource(item.sourceId).script?.(pb, item.id).catch(() => null);
+      if (saved?.escenas) {
+        fs.writeFileSync(path.join(dir, 'guion.md'), saved.guion, 'utf8');
+        fs.writeFileSync(path.join(dir, 'escenas.json'), saved.escenas, 'utf8');
+      }
+    }
     const [serie, slug] = folder.split('/');
     const e: EpisodeState = {
       id: folder,
@@ -188,12 +202,14 @@ export class Pipeline {
     // An episode made by hand that already has its script starts at the script review.
     if (fs.existsSync(path.join(dir, 'escenas.json'))) {
       e.steps.prep = { status: 'approved', updatedAt: now() };
-      e.steps.script = { status: 'review', updatedAt: now(), note: 'Importado de la carpeta del episodio' };
+      e.steps.script = { status: 'review', updatedAt: now(), note: 'Guion guardado del episodio: revísalo y apruébalo para seguir.' };
       e.current = 'script';
     }
     this.dirs.set(e.id, dir);
     saveEpisode(e);
     this.ev.episode(e);
+    // The admin hears the exact status right away (e.g. waiting for your review at Preparación).
+    getSource(item.sourceId).report(pb, item.id, toTeamStatus(e), settings.userName).catch(() => {});
     return e;
   }
 
@@ -253,6 +269,7 @@ export class Pipeline {
   }
 
   private approve(id: string, step: StepId): EpisodeState {
+    if (step === 'script') void this.shareScript(id);
     return this.update(id, (e) => {
       e.steps[step] = { ...e.steps[step], status: 'approved', updatedAt: now(), error: undefined };
       const next = STEP_IDS[STEP_IDS.indexOf(step) + 1];
@@ -261,6 +278,22 @@ export class Pipeline {
         e.current = next;
       }
     });
+  }
+
+  /** Keeps the approved script with the team (the admin), so it survives this computer. */
+  private async shareScript(id: string): Promise<void> {
+    const e = this.get(id);
+    const src = e.source ? getSource(e.source.id) : null;
+    if (!e.source || !src?.saveScript) return;
+    const read = (f: string) => (fs.existsSync(path.join(e.dir, f)) ? fs.readFileSync(path.join(e.dir, f), 'utf8') : null);
+    const guion = read('guion.md');
+    if (!guion) return;
+    try {
+      await src.saveScript(activePlaybook(loadSettings()), e.source.episodeId, { guion, escenas: read('escenas.json') });
+      this.activity(id, 'script', 'info', 'Guion guardado en el admin del equipo');
+    } catch (err) {
+      this.activity(id, 'script', 'error', `No se pudo guardar el guion en el admin: ${String((err as Error)?.message ?? err)}`);
+    }
   }
 
   /** The brief of the episode as its source tells it (case, characters, phrase…). */
@@ -374,12 +407,14 @@ export class Pipeline {
               step,
               playbookName: pb.name,
               playbookText: ctx.text,
+              playbookDir: pb.rootDir,
               caseBlock,
             }),
             sessionId,
             model: e.brain.model || settings.claude.model,
             effort: settings.claude.effort,
-            addDirs: [resolveIn(pb, pb.episodesRoot)],
+            // Other episodes of the series (continuity) and the playbook's files (templates, Robly, texts).
+            addDirs: [...new Set([resolveIn(pb, pb.episodesRoot), pb.rootDir].filter(Boolean))],
             configDir: account?.configDir,
             signal,
             onEvent,

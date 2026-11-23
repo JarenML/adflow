@@ -70,6 +70,7 @@ export function defaultSettings(): Settings {
     concurrency: { brain: 2, image: 2, render: 1 },
     allowPaidProviders: false,
     userName: '',
+    storageDir: '',
   };
 }
 
@@ -102,7 +103,58 @@ export function saveSettings(s: Settings): Settings {
   return s;
 }
 
+/** Where new episode folders go: the folder chosen in Settings or AdFlow's own storage. */
+export function episodesDir(s: Settings): string {
+  return s.storageDir || path.join(dataDir, 'episodios');
+}
+
+// ── Team playbook: the copy downloaded from the admin (see teamPlaybook.ts) ─────────────────
+
+export const teamPlaybookDir = () => path.join(dataDir, 'playbook-equipo');
+export const teamPlaybookFiles = () => path.join(teamPlaybookDir(), 'archivos');
+export const teamPlaybookStateFile = () => path.join(teamPlaybookDir(), 'estado.json');
+
+export interface TeamPlaybookState {
+  manifest?: {
+    id: string;
+    name: string;
+    version: string;
+    masterPrompt: string;
+    casesFile: string;
+    configFile: string;
+    toolsDir: string;
+    files: { path: string; size: number; sha256: string }[];
+  };
+  syncedAt?: string;
+  changed?: number;
+  error?: string;
+}
+
+export function readTeamPlaybookState(): TeamPlaybookState {
+  return readJson<TeamPlaybookState>(teamPlaybookStateFile(), {});
+}
+
+/** The team playbook as AdFlow uses it: its rules from the downloaded copy, episodes in AdFlow's storage. */
+export function teamPlaybook(s: Settings): Playbook {
+  const m = readTeamPlaybookState().manifest;
+  return {
+    id: m?.id ?? 'robles-ai',
+    name: m?.name ?? 'Playbook del equipo',
+    origin: 'team',
+    rootDir: m ? teamPlaybookFiles() : '',
+    masterPrompt: m?.masterPrompt ?? 'creative/social/PROMPT_MAESTRO_VIDEO.md',
+    casesFile: m?.casesFile ?? 'creative/social/PROMPT_MAESTRO_CASOS.md',
+    // Not part of the package: the admin replaced the tracking file.
+    trackingFile: 'creative/social/SEGUIMIENTO_SERIES.md',
+    episodesRoot: episodesDir(s),
+    toolsDir: m?.toolsDir ?? 'creative/social/herramientas',
+    configFile: m?.configFile ?? 'creative/social/adflow.playbook.json',
+  };
+}
+
+/** With the team admin as the source, the playbook comes from the admin too; otherwise from a folder. */
 export function activePlaybook(s: Settings): Playbook {
+  if (s.episodeSource === 'produccion-redes') return teamPlaybook(s);
   return s.playbooks.find((p) => p.id === s.activePlaybookId) ?? s.playbooks[0];
 }
 

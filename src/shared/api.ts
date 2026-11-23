@@ -10,6 +10,7 @@ import type {
   LibraryItem,
   NarrationLine,
   PipelineAction,
+  PlaybookSyncStatus,
   ProviderInfo,
   QueueSnapshot,
   Settings,
@@ -31,6 +32,11 @@ export interface AdflowApi {
   episodeSources(): Promise<EpisodeSourceInfo[]>;
   /** Saves the admin address (and a new token, if given) and checks them; returns who the token belongs to. */
   teamConnect(url: string, token?: string): Promise<{ name: string; email: string }>;
+  /** The copy of the team playbook downloaded from the admin. */
+  playbookStatus(): Promise<PlaybookSyncStatus>;
+  playbookSync(): Promise<PlaybookSyncStatus>;
+  /** The folder where new episodes are created. */
+  storagePath(): Promise<string>;
 
   library(): Promise<LibraryItem[]>;
   episodes(): Promise<EpisodeState[]>;
@@ -72,6 +78,9 @@ export const API_METHODS = [
   'playbookConfigOrigin',
   'episodeSources',
   'teamConnect',
+  'playbookStatus',
+  'playbookSync',
+  'storagePath',
   'adCopy',
   'finalVideo',
   'library',

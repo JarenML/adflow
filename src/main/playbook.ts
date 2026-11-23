@@ -1,5 +1,5 @@
-// Reads the active playbook from disk. The playbook is never copied: it stays in its own repo
-// (e.g. the person's robles.ai clone), so edits by the team show up on the next read.
+// Reads the active playbook from disk: a repo on this computer (origin folder) or the copy downloaded
+// from the team admin (origin team, kept up to date by teamPlaybook.ts).
 import fs from 'node:fs';
 import type { Playbook, StepId } from '@shared/types';
 import { playbookConfigSchema, sectionsFor, type PlaybookConfig } from '@shared/playbookConfig';
@@ -38,7 +38,7 @@ export function loadConfig(p: Playbook): LoadedConfig {
 
 export function playbookReady(p: Playbook): { ok: boolean; problems: string[] } {
   const problems: string[] = [];
-  if (!p.rootDir) problems.push('No está configurada la carpeta del playbook.');
+  if (!p.rootDir) problems.push(p.origin === 'team' ? 'Aún no se descargó el playbook del admin: revisa la conexión en Ajustes.' : 'No está configurada la carpeta del playbook.');
   else if (!fs.existsSync(resolveIn(p, p.masterPrompt))) problems.push(`Prompt maestro: no existe ${p.masterPrompt}`);
   const cfg = loadConfig(p);
   if (cfg.error) problems.push(cfg.error);

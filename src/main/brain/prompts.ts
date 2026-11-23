@@ -8,6 +8,8 @@ export function systemPrompt(opts: {
   step: StepId;
   playbookName: string;
   playbookText: string;
+  /** Folder that holds the playbook's files (the paths the playbook mentions are relative to it). */
+  playbookDir?: string;
   caseBlock: string;
 }): string {
   return `# AdFlow · cerebro del episodio
@@ -24,6 +26,8 @@ Reglas de AdFlow (además del playbook):
 - Los JSON deben ser válidos (UTF-8, sin comentarios). Respeta los nombres de archivo exactos.
 - Escribe en español con ortografía impecable; los prompts para generadores van en inglés.
 - Al terminar responde en 1–3 líneas qué hiciste (sin repetir el contenido de los archivos).
+- Las rutas del playbook (creative/social/…, public/robly-avatar/…, src/i18n/…) están dentro de
+  ${opts.playbookDir || 'la carpeta del playbook'}; puedes leerlas, nunca escribas ahí.
 - Paso actual: ${opts.step}. Episodio: «${opts.episode.title}» (serie ${opts.episode.serie}).
 
 # Playbook: ${opts.playbookName} (fragmento para este paso)

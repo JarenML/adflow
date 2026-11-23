@@ -11,4 +11,14 @@ export interface EpisodeSource extends EpisodeSourceInfo {
   claim(playbook: Playbook, episodeId: string, user: string): Promise<void>;
   /** Called after every change of a local episode (see shared/progress.ts). */
   report(playbook: Playbook, episodeId: string, progress: TeamProgress, user: string): Promise<void>;
+  /** The approved script someone already saved there (to continue the episode on another computer). */
+  script?(playbook: Playbook, episodeId: string): Promise<EpisodeScript | null>;
+  /** Keeps the approved script with the team. */
+  saveScript?(playbook: Playbook, episodeId: string, script: EpisodeScript): Promise<void>;
+}
+
+/** guion.md and escenas.json as text. */
+export interface EpisodeScript {
+  guion: string;
+  escenas: string | null;
 }

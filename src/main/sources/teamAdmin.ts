@@ -25,6 +25,19 @@ interface RemoteEpisode {
   assigneeName: string | null;
   publication: { network: string; date: string; url: string | null; utmContent: string | null } | null;
   brief?: string;
+  scriptText?: { guion: string; escenas: string | null; at: string; by: string | null } | null;
+}
+
+/** What GET /api/adflow/playbook returns (PlaybookManifest in robles.ai). */
+export interface PlaybookManifest {
+  id: string;
+  name: string;
+  version: string;
+  masterPrompt: string;
+  casesFile: string;
+  configFile: string;
+  toolsDir: string;
+  files: { path: string; size: number; sha256: string }[];
 }
 
 export const TEAM_TOKEN_SECRET = 'team-token';
@@ -84,6 +97,56 @@ async function api<T>(route: string, init: { method?: string; body?: unknown } =
 
 const remoteId = (episodeId: string) => Number(episodeId.replace(/^team:/, ''));
 
+export const fetchPlaybookManifest = () => api<PlaybookManifest>('/playbook');
+
+/** One file of the team playbook, as bytes. */
+export async function fetchPlaybookFile(rel: string): Promise<Buffer> {
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl()}/api/adflow/playbook/file?path=${encodeURIComponent(rel)}`, {
+      headers: { Authorization: `Bearer ${token()}` },
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch (err) {
+    throw new TeamApiError(`No se pudo descargar ${rel}: ${String((err as Error).message ?? err)}`, 0);
+  }
+  if (!res.ok) throw new TeamApiError(`El admin no entregó ${rel} (${res.status})`, res.status);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+/** Limits of the admin (SCRIPT_LIMITS in robles.ai). */
+const SCRIPT_LIMITS = { guion: 40_000, escenas: 55_000 };
+
+// Scripts that could not be sent yet wait here (the latest per episode).
+const scriptOutboxFile = () => path.join(getDataDir(), 'team-script-outbox.json');
+
+function readScriptOutbox(): Record<string, { guion: string; escenas: string | null }> {
+  try {
+    return JSON.parse(fs.readFileSync(scriptOutboxFile(), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function sendScript(episodeId: string, s: { guion: string; escenas: string | null }) {
+  return api(`/episodes/${remoteId(episodeId)}/script`, { method: 'PUT', body: s });
+}
+
+async function flushScripts(): Promise<void> {
+  const box = readScriptOutbox();
+  if (!Object.keys(box).length) return;
+  for (const [id, s] of Object.entries(box)) {
+    try {
+      await sendScript(id, s);
+      delete box[id];
+    } catch (err) {
+      if (err instanceof TeamApiError && err.status === 0) break;
+      delete box[id];
+    }
+  }
+  writeJson(scriptOutboxFile(), box);
+}
+
 // ── Outbox: progress that could not be sent yet (only the latest per episode) ─────────────────
 
 const outboxFile = () => path.join(getDataDir(), 'team-outbox.json');
@@ -138,6 +201,7 @@ export const teamAdminSource: EpisodeSource = {
 
   async list(): Promise<SourceEpisode[]> {
     await flushOutbox().catch(() => {});
+    await flushScripts().catch(() => {});
     const rows = await api<RemoteEpisode[]>('/episodes');
     return rows.map((r) => ({
       id: `team:${r.id}`,
@@ -160,6 +224,26 @@ export const teamAdminSource: EpisodeSource = {
     // Episodes created in the admin carry only a title and summary: add the catalog's series facts.
     const facts = await playbookFilesSource.brief(p, '').catch(() => '');
     return [`## «${r.title}» (${r.businessType})`, r.summary, facts].filter(Boolean).join('\n\n');
+  },
+
+  async script(_p, episodeId) {
+    const r = await api<RemoteEpisode>(`/episodes/${remoteId(episodeId)}`);
+    return r.scriptText ? { guion: r.scriptText.guion, escenas: r.scriptText.escenas } : null;
+  },
+
+  async saveScript(_p, episodeId, s) {
+    if (s.guion.length > SCRIPT_LIMITS.guion || (s.escenas?.length ?? 0) > SCRIPT_LIMITS.escenas) {
+      throw new Error('El guion es demasiado largo para guardarlo en el admin.');
+    }
+    try {
+      await sendScript(episodeId, s);
+    } catch (err) {
+      if (err instanceof TeamApiError && err.status === 0) {
+        writeJson(scriptOutboxFile(), { ...readScriptOutbox(), [episodeId]: s });
+        return;
+      }
+      throw err;
+    }
   },
 
   async claim(_p, episodeId) {

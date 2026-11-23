@@ -12,7 +12,8 @@ import { checkTeamConnection, TEAM_TOKEN_SECRET } from './sources/teamAdmin';
 import { PROVIDERS, SECRET_LABELS, estimate } from './providers/registry';
 import { listVoices } from './providers/voices';
 import { getSecrets, secretStatus, setSecret } from './secrets';
-import { activePlaybook, initStore, loadSettings, saveSettings } from './store';
+import { activePlaybook, episodesDir, initStore, loadSettings, saveSettings } from './store';
+import { syncTeamPlaybook, teamPlaybookStatus } from './teamPlaybook';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'adflow', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
@@ -98,8 +99,12 @@ function registerIpc() {
     const me = await checkTeamConnection();
     const after = loadSettings();
     saveSettings({ ...after, team: { ...after.team, userName: me.name } });
+    void syncTeamPlaybook();
     return me;
   });
+  handle('playbookStatus', () => teamPlaybookStatus());
+  handle('playbookSync', () => syncTeamPlaybook());
+  handle('storagePath', () => episodesDir(loadSettings()));
   handle('adCopy', (id: string) => pipeline.adCopy(id));
   handle('finalVideo', (id: string) => pipeline.finalVideo(id));
   handle('library', () => pipeline.library());
@@ -155,6 +160,8 @@ void app.whenReady().then(() => {
   });
   registerIpc();
   createWindow();
+  // The team playbook is refreshed in the background at every start.
+  if (loadSettings().episodeSource === 'produccion-redes') void syncTeamPlaybook();
 });
 
 app.on('window-all-closed', () => app.quit());
