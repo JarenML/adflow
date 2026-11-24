@@ -40,9 +40,19 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')").${{ github.run_number }}
           npm pkg set version=$VERSION
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "Version $VERSION"
 
       - run: npm run build
+
+      # The release is created here so electron-builder only uploads to it: when it creates the release
+      # itself, its parallel uploads race to create it and one of them fails (422).
+      - name: Create release
+        shell: bash
+        run: gh release create "v$VERSION" --target "$GITHUB_SHA" --title "AdFlow $VERSION" --notes "$NOTES"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES: ${{ github.event.head_commit.message || 'Manual release' }}
 
       - name: Build and publish installer
         run: npx electron-builder --win --publish always
