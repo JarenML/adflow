@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BriefcaseBusiness, Library, Settings as SettingsIcon, WandSparkles } from 'lucide-react';
+import type { AppInfo } from '@shared/api';
 import type { Settings, StepId } from '@shared/types';
 import { api, useQueue } from './lib/api';
 import { cx, Logo } from './components/ui';
@@ -32,6 +33,11 @@ export default function App() {
   useEffect(() => {
     api.getSettings().then(setSettings);
   }, [route.view]);
+  const [appInfo, setAppInfo] = useState<AppInfo>();
+  useEffect(() => {
+    api.appInfo().then(setAppInfo);
+    return api.on('update', (u) => setAppInfo((a) => a && { ...a, ...u }));
+  }, []);
   const pb = settings?.playbooks.find((p) => p.id === settings.activePlaybookId);
 
   const nav = [
@@ -51,6 +57,7 @@ export default function App() {
           <span className="text-[16px] font-semibold tracking-tight">
             Ad<span className="brand-text">Flow</span>
           </span>
+          {appInfo && <span className="font-mono text-[11px] text-mute">v{appInfo.version}</span>}
         </div>
         <nav className="flex-1 space-y-1 px-3 pt-2">
           {nav.map((n) => (
@@ -67,6 +74,21 @@ export default function App() {
             </button>
           ))}
         </nav>
+        {appInfo?.readyVersion && (
+          <div className="mx-3 rounded-xl border border-brand/30 bg-brand/10 p-3">
+            <p className="text-[12px] font-medium text-ink">v{appInfo.readyVersion} lista</p>
+            <p className="mt-0.5 text-[11px] text-mute">
+              {running ? 'Se instala al cerrar AdFlow. Para reiniciar ahora, espera a que terminen las tareas.' : 'Se instala al cerrar AdFlow, o ahora:'}
+            </p>
+            <button
+              onClick={() => api.restartToUpdate()}
+              disabled={running > 0}
+              className="no-drag mt-2 w-full rounded-lg bg-brand px-3 py-1.5 text-[12px] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Reiniciar ahora
+            </button>
+          </div>
+        )}
         <div className="m-3 rounded-xl border border-line bg-panel-2/50 p-3">
           <div className="flex items-center gap-2 text-[12px]">
             <span className={cx('size-2 rounded-full', running ? 'animate-pulse bg-brand-2' : 'bg-faint')} />

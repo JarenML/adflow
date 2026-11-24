@@ -20,6 +20,15 @@ import type {
 } from './types';
 import type { Script, ScriptCheck } from './schemas';
 
+/** An update downloaded and installed when AdFlow closes (or now, with restartToUpdate). */
+export interface UpdateState {
+  readyVersion: string | null;
+}
+
+export interface AppInfo extends UpdateState {
+  version: string;
+}
+
 export interface AdflowApi {
   getSettings(): Promise<Settings>;
   saveSettings(s: Settings): Promise<Settings>;
@@ -72,9 +81,15 @@ export interface AdflowApi {
   pickFolder(): Promise<string | null>;
   defaults(cap: Capability): Promise<string>;
 
+  /** The installed version and the update waiting to be installed, if any. */
+  appInfo(): Promise<AppInfo>;
+  /** Closes AdFlow, installs the downloaded update and opens the new version. */
+  restartToUpdate(): Promise<void>;
+
   on(channel: 'episode', cb: (e: EpisodeState) => void): () => void;
   on(channel: 'activity', cb: (a: ActivityEvent) => void): () => void;
   on(channel: 'queue', cb: (q: QueueSnapshot) => void): () => void;
+  on(channel: 'update', cb: (u: UpdateState) => void): () => void;
 }
 
 export const API_METHODS = [
@@ -117,4 +132,6 @@ export const API_METHODS = [
   'openPath',
   'pickFolder',
   'defaults',
+  'appInfo',
+  'restartToUpdate',
 ] as const;

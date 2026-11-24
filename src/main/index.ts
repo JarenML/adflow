@@ -14,7 +14,7 @@ import { listVoices, voiceById, voiceSample } from './providers/voices';
 import { getSecrets, secretStatus, setSecret } from './secrets';
 import { activePlaybook, episodesDir, getDataDir, initStore, loadSettings, saveSettings } from './store';
 import { syncTeamPlaybook, teamPlaybookStatus } from './teamPlaybook';
-import { startAutoUpdates } from './updater';
+import { restartToUpdate, startAutoUpdates, updateState } from './updater';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'adflow', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
@@ -147,6 +147,8 @@ function registerIpc() {
     const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
     return r.canceled ? null : r.filePaths[0];
   });
+  handle('appInfo', () => ({ version: app.getVersion(), ...updateState() }));
+  handle('restartToUpdate', () => restartToUpdate());
   handle('defaults', (cap) => loadSettings().defaults[cap as keyof ReturnType<typeof loadSettings>['defaults']]);
 }
 
@@ -175,7 +177,7 @@ void app.whenReady().then(() => {
   });
   registerIpc();
   createWindow();
-  startAutoUpdates();
+  startAutoUpdates((u) => broadcast('update', u));
   // The team playbook is refreshed in the background at every start.
   if (loadSettings().episodeSource === 'produccion-redes') void syncTeamPlaybook();
 });
