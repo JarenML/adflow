@@ -13,7 +13,7 @@ const running = (q: WorkQueue, lane: Lane, ep?: string) => q.snapshot().jobs.fil
 
 describe('WorkQueue', () => {
   it('limits images per episode, each episode with its own slots', () => {
-    const q = new WorkQueue({ image: 2, clip: 1, voice: 2, episodes: 0 }, () => {});
+    const q = new WorkQueue({ image: 2, clip: 1, voice: 2, render: 1, episodes: 0 }, () => {});
     for (let i = 0; i < 3; i++) q.add('A', 'images', 'image', `A${i}`, hold().run);
     for (let i = 0; i < 3; i++) q.add('B', 'images', 'image', `B${i}`, hold().run);
     expect(running(q, 'image', 'A')).toBe(2);
@@ -21,7 +21,7 @@ describe('WorkQueue', () => {
   });
 
   it('images and clips do not share slots', () => {
-    const q = new WorkQueue({ image: 1, clip: 1, voice: 2, episodes: 0 }, () => {});
+    const q = new WorkQueue({ image: 1, clip: 1, voice: 2, render: 1, episodes: 0 }, () => {});
     q.add('A', 'images', 'image', 'img', hold().run);
     q.add('A', 'videos', 'clip', 'clip', hold().run);
     expect(running(q, 'image')).toBe(1);
@@ -29,13 +29,13 @@ describe('WorkQueue', () => {
   });
 
   it('0 means all at once', () => {
-    const q = new WorkQueue({ image: 0, clip: 1, voice: 2, episodes: 0 }, () => {});
+    const q = new WorkQueue({ image: 0, clip: 1, voice: 2, render: 1, episodes: 0 }, () => {});
     for (let i = 0; i < 7; i++) q.add('A', 'images', 'image', `A${i}`, hold().run);
     expect(running(q, 'image')).toBe(7);
   });
 
-  it('renders one at a time across episodes, and starts the next when one ends', async () => {
-    const q = new WorkQueue({ image: 2, clip: 2, voice: 2, episodes: 0 }, () => {});
+  it('renders one at a time across episodes by default, and starts the next when one ends', async () => {
+    const q = new WorkQueue({ image: 2, clip: 2, voice: 2, render: 1, episodes: 0 }, () => {});
     const a = hold();
     const done = q.add('A', 'render', 'render', 'A', a.run);
     q.add('B', 'render', 'render', 'B', hold().run);
@@ -45,8 +45,17 @@ describe('WorkQueue', () => {
     expect(q.snapshot().jobs.find((j) => j.label === 'B')?.state).toBe('running');
   });
 
+  it('runs as many renders as the setting allows, at most 4', () => {
+    const q = new WorkQueue({ image: 2, clip: 2, voice: 2, render: 2, episodes: 0 }, () => {});
+    for (const ep of ['A', 'B', 'C']) q.add(ep, 'render', 'render', ep, hold().run);
+    expect(running(q, 'render')).toBe(2);
+    q.setLimits({ image: 2, clip: 2, voice: 2, render: 9, episodes: 0 });
+    for (const ep of ['D', 'E']) q.add(ep, 'render', 'render', ep, hold().run);
+    expect(running(q, 'render')).toBe(4);
+  });
+
   it('one Claude task per episode', () => {
-    const q = new WorkQueue({ image: 2, clip: 2, voice: 2, episodes: 0 }, () => {});
+    const q = new WorkQueue({ image: 2, clip: 2, voice: 2, render: 1, episodes: 0 }, () => {});
     q.add('A', 'script', 'brain', 'A1', hold().run);
     q.add('A', 'publish', 'brain', 'A2', hold().run);
     q.add('B', 'script', 'brain', 'B1', hold().run);
@@ -55,7 +64,7 @@ describe('WorkQueue', () => {
   });
 
   it('voice lines per episode follow the voice limit', () => {
-    const q = new WorkQueue({ image: 1, clip: 1, voice: 3, episodes: 0 }, () => {});
+    const q = new WorkQueue({ image: 1, clip: 1, voice: 3, render: 1, episodes: 0 }, () => {});
     for (let i = 0; i < 5; i++) q.add('A', 'voice', 'voice', `L${i}`, hold().run);
     expect(running(q, 'voice')).toBe(3);
   });
@@ -64,7 +73,7 @@ describe('WorkQueue', () => {
     afterEach(() => vi.useRealTimers());
 
     it('a third episode waits while two are working, whatever their step', () => {
-      const q = new WorkQueue({ image: 2, clip: 2, voice: 2, episodes: 2 }, () => {});
+      const q = new WorkQueue({ image: 2, clip: 2, voice: 2, render: 1, episodes: 2 }, () => {});
       q.add('A', 'images', 'image', 'A', hold().run);
       q.add('B', 'script', 'brain', 'B', hold().run);
       q.add('C', 'voice', 'voice', 'C', hold().run);
@@ -74,7 +83,7 @@ describe('WorkQueue', () => {
 
     it('an episode keeps its place for a moment between steps, then frees it', async () => {
       vi.useFakeTimers();
-      const q = new WorkQueue({ image: 2, clip: 2, voice: 2, episodes: 1 }, () => {});
+      const q = new WorkQueue({ image: 2, clip: 2, voice: 2, render: 1, episodes: 1 }, () => {});
       const a = hold();
       const done = q.add('A', 'images', 'brain', 'A prompts', a.run);
       q.add('B', 'script', 'brain', 'B', hold().run);
@@ -88,7 +97,7 @@ describe('WorkQueue', () => {
 
     it('an episode waiting for approval frees its place after the pause', async () => {
       vi.useFakeTimers();
-      const q = new WorkQueue({ image: 2, clip: 2, voice: 2, episodes: 1 }, () => {});
+      const q = new WorkQueue({ image: 2, clip: 2, voice: 2, render: 1, episodes: 1 }, () => {});
       const a = hold();
       const done = q.add('A', 'script', 'brain', 'A', a.run);
       q.add('B', 'script', 'brain', 'B', hold().run);

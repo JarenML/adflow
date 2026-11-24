@@ -1,15 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import {
-  composeSections,
-  episodeSlug,
-  parseCases,
-  parseTracking,
-  serieSlug,
-  sliceSections,
-  toSourceEpisodes,
-} from './playbookParse';
+import { composeSections, episodeSlug, serieSlug, sliceSections } from './playbookParse';
 import preset from '../../presets/robles-ai.playbook.json';
 
 const sample = `Intro line
@@ -59,30 +51,13 @@ describe('slugs', () => {
 
 // The real Robles.AI playbook, when this repo sits next to a robles.ai clone.
 const social = path.resolve(__dirname, '../../../robles.ai/creative/social');
-const hasPlaybook = fs.existsSync(path.join(social, 'PROMPT_MAESTRO_VIDEO.md'));
+const playbook = path.join(social, 'playbook');
+const hasPlaybook = fs.existsSync(path.join(playbook, 'PROMPT_MAESTRO_VIDEO.md'));
 
 describe.skipIf(!hasPlaybook)('Robles.AI playbook', () => {
   it('has every section the step map asks for', () => {
-    const sections = sliceSections(fs.readFileSync(path.join(social, 'PROMPT_MAESTRO_VIDEO.md'), 'utf8'));
+    const sections = sliceSections(fs.readFileSync(path.join(playbook, 'PROMPT_MAESTRO_VIDEO.md'), 'utf8'));
     const ids = [...preset.always, ...Object.values(preset.sections).flat()];
     expect(composeSections(sections, ids).missing).toEqual([]);
-  });
-
-  it('builds the episode library from the catalog and the tracking table', () => {
-    const cases = parseCases(fs.readFileSync(path.join(social, 'PROMPT_MAESTRO_CASOS.md'), 'utf8'));
-    const rows = parseTracking(fs.readFileSync(path.join(social, 'SEGUIMIENTO_SERIES.md'), 'utf8'));
-    expect(cases.length).toBeGreaterThanOrEqual(12);
-    expect(cases.find((c) => c.number === 3)?.title).toBe('La llamada que nadie contestó');
-    const eps = toSourceEpisodes(cases, rows);
-    const dental = eps.find((i) => i.caseNumber === 3)!;
-    expect(dental.status).toBe('pendiente');
-    expect(dental.id).toBe('case:3:la-llamada-que-nadie-contesto');
-    expect(dental.summary).toContain('Sofía');
-    // Tracked episodes use their folder as id, so the link survives new rows in the table.
-    const clinicas = eps.filter((i) => i.caseNumber === 1);
-    expect(clinicas.length).toBe(2);
-    expect(clinicas.every((c) => c.id.startsWith('folder:clinicas/'))).toBe(true);
-    expect(clinicas.every((c) => c.status === 'terminado')).toBe(true);
-    expect(new Set(eps.map((e) => e.id)).size).toBe(eps.length);
   });
 });

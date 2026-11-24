@@ -1,9 +1,10 @@
 // Work queue with one lane per kind of work. Every item (one Claude task, one image, one clip,
 // one voice line, one render phase) is one job. Most lanes are limited per episode: each episode
 // gets its own slots, so one episode never waits for another. Render is limited for the whole
-// computer, because one render already takes most of the CPU. On top of that, a limit of episodes
+// computer (1–4, from the settings), because renders share the CPU. On top of that, a limit of episodes
 // working at the same time, whatever step they are in.
 import type { ConcurrencySettings, Lane, QueueSnapshot, StepId } from '@shared/types';
+import { clampRenders } from '@shared/types';
 
 export const LANES: Lane[] = ['brain', 'image', 'clip', 'voice', 'render'];
 
@@ -16,9 +17,9 @@ const SCOPE: Record<Lane, 'episode' | 'global'> = {
   render: 'global',
 };
 
-/** Fixed limits; images, clips and voices come from the settings (0 = no limit). */
+/** Claude is fixed; images, clips and voices come from the settings (0 = no limit); render 1–4. */
 function lanesLimits(c: ConcurrencySettings): Record<Lane, number> {
-  return { brain: 1, image: c.image, clip: c.clip, voice: c.voice, render: 1 };
+  return { brain: 1, image: c.image, clip: c.clip, voice: c.voice, render: clampRenders(c.render ?? 1) };
 }
 
 /**

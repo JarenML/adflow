@@ -18,7 +18,12 @@
     "lastKind": "final",
     "mentions": [
       { "id": "robly", "label": "Robly presente", "pattern": "robly", "missing": "No aparece en ninguna escena" },
-      { "id": "decision", "label": "Una persona decide", "pattern": "decisi|confirma|decide", "missing": "No se ve quién decide" }
+      { "id": "decision", "label": "Una persona decide", "pattern": "decisi|confirma|decide", "missing": "No se ve quién decide" },
+      { "id": "costo", "label": "Segundo personaje que habla (costo)", "pattern": "\"momento\":\\s*\"costo\"", "missing": "Ninguna escena con momento \"costo\" (§1-A)" },
+      { "id": "metafora", "label": "Metáfora animada", "pattern": "\"momento\":\\s*\"metafora\"", "missing": "Ninguna escena con momento \"metafora\" (§1-A)" },
+      { "id": "golpe", "label": "Golpe con una cifra antes del logo", "pattern": "\"momento\":\\s*\"golpe\"", "missing": "Ninguna escena con momento \"golpe\" (§1-A)" },
+      { "id": "espejo", "label": "Final espejo del gancho", "pattern": "\"momento\":\\s*\"espejo\"", "missing": "Ninguna escena con momento \"espejo\" (§1-A)" },
+      { "id": "cambios", "label": "Cambios anclados a palabras", "pattern": "\"cambios\":\\s*\\[\\s*\\{", "missing": "Las escenas no listan sus \"cambios\" (§1-A)" }
     ]
   },
   "closingLine": "[shouting, very excited] ¡Robles punto a i! [excited] ¡Inteligencia artificial que impulsa tu negocio!"

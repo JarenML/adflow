@@ -165,8 +165,6 @@ export interface Playbook {
   /** Root of the repository that holds the playbook (e.g. a clone of robles.ai). */
   rootDir: string;
   masterPrompt: string;
-  casesFile: string;
-  trackingFile: string;
   /** Where episode folders live, relative to rootDir unless absolute. */
   episodesRoot: string;
   toolsDir: string;
@@ -236,10 +234,16 @@ export type Lane = 'brain' | 'image' | 'clip' | 'voice' | 'render';
  * and how many episodes work at the same time whatever their step (0 = no limit).
  * Claude tasks are fixed at 1 per episode; render at 1 for the whole computer.
  */
+export const MAX_RENDERS = 4;
+/** Renders at the same time: at least 1 (render has no "no limit"), at most MAX_RENDERS. */
+export const clampRenders = (n: number) => Math.min(MAX_RENDERS, Math.max(1, Math.round(Number(n)) || 1));
+
 export interface ConcurrencySettings {
   image: number;
   clip: number;
   voice: number;
+  /** Renders at the same time on this computer (1–4). They share the CPU. */
+  render: number;
   episodes: number;
 }
 

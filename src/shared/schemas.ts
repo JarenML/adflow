@@ -104,6 +104,16 @@ export function screenTexts(s: Scene): string[] {
   return Array.isArray(t) ? t : [t];
 }
 
+/** Longest a clip scene may last in the script: the clips are generated at 4 s. */
+export const MAX_CLIP_S = 4;
+
+/** Clip scenes of the script that last longer than MAX_CLIP_S, as problems for the brain to fix. */
+export function longClipProblems(script: Script): string[] {
+  return script.escenas
+    .filter((s) => isClipScene(s) && sceneDuration(s) > MAX_CLIP_S + 0.05)
+    .map((s) => `${s.id}: es real_clip y dura ${sceneDuration(s).toFixed(2)} s; un clip dura como máximo ${MAX_CLIP_S} s.`);
+}
+
 export type SceneKind = 'real' | '2d' | 'logo' | 'final' | 'other';
 
 /**

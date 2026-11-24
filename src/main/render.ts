@@ -6,9 +6,11 @@ import path from 'node:path';
 import type { Playbook } from '@shared/types';
 import { runCli, startCli } from './proc';
 import { createHash } from 'node:crypto';
+import os from 'node:os';
 import { getDataDir, resolveIn } from './store';
 
-const SOCIAL = 'creative/social';
+/** The playbook's templates live next to its master prompt (creative/social/playbook/ in robles.ai). */
+const templatesDir = (pb: Playbook) => path.dirname(resolveIn(pb, pb.masterPrompt));
 
 export const remotionDir = (episodeDir: string) => path.join(episodeDir, 'remotion');
 
@@ -40,7 +42,7 @@ function projectSource(pb: Playbook, episodeDir: string, serie: string): { dir: 
   }
   found.sort((a, b) => Number(b.same) - Number(a.same) || b.t - a.t);
   if (found[0]) return { dir: found[0].p, label: `el proyecto de ${path.basename(path.dirname(found[0].p))}` };
-  return { dir: resolveIn(pb, `${SOCIAL}/plantilla-proyecto`), label: 'la plantilla del playbook' };
+  return { dir: path.join(templatesDir(pb), 'plantilla-proyecto'), label: 'la plantilla del playbook' };
 }
 
 const MEDIA = /\.(png|jpe?g|webp|mp4|mov|webm|wav|mp3)$/i;
@@ -140,7 +142,7 @@ export async function prepareProject(
   }
 
   // The standard logo and closing scene, and the official Robly: always the playbook's version.
-  const social = resolveIn(pb, SOCIAL);
+  const social = templatesDir(pb);
   for (const [dir, files] of [
     ['plantilla-logo', ['EscenaLogo.tsx', 'PuenteLogo.tsx']],
     ['plantilla-final', ['EscenaFinal.tsx']],
@@ -156,7 +158,7 @@ export async function prepareProject(
 
   // Synthesized sound effects, if the project has none (needs Python; optional).
   const sfx = path.join(dest, 'public', 'sfx');
-  const tool = resolveIn(pb, `${SOCIAL}/herramientas/efectos_sintetizados.py`);
+  const tool = path.join(resolveIn(pb, pb.toolsDir), 'efectos_sintetizados.py');
   if (!fs.readdirSync(sfx).some((f) => f.endsWith('.wav')) && fs.existsSync(tool)) {
     log('Sintetiza los efectos de sonido');
     const r = await runCli('python', [tool, sfx], { timeoutMs: 120_000, shell: false, signal });
@@ -204,12 +206,23 @@ export async function writeMaterialList(project: string): Promise<string> {
   return text;
 }
 
-/** Renders the composition "Video" (the template's render script). Reports progress as it goes. */
-export function renderVideo(project: string, onProgress: (pct: number) => void, signal?: AbortSignal): Promise<{ ok: boolean; file: string; error?: string }> {
+/**
+ * Renders the composition "Video" (the template's render script). Reports progress as it goes.
+ * `parallel` is how many renders the queue lets run at once: with more than one, each gets an equal
+ * share of the CPU threads (Remotion alone takes half of them per render, and two would fight).
+ */
+export function renderVideo(
+  project: string,
+  onProgress: (pct: number) => void,
+  signal?: AbortSignal,
+  parallel = 1,
+): Promise<{ ok: boolean; file: string; error?: string }> {
   const out = path.join(project, 'out', 'video.mp4');
   fs.mkdirSync(path.dirname(out), { recursive: true });
+  const args = ['remotion', 'render', 'src/index.ts', 'Video', 'out/video.mp4', '--scale=1.5', '--crf=19'];
+  if (parallel > 1) args.push(`--concurrency=${Math.max(1, Math.floor(os.availableParallelism() / parallel))}`);
   return new Promise((resolve) => {
-    const child = startCli('npx', ['remotion', 'render', 'src/index.ts', 'Video', 'out/video.mp4', '--scale=1.5', '--crf=19'], { cwd: project });
+    const child = startCli('npx', args, { cwd: project });
     let tail = '';
     let last = -10;
     const onData = (d: Buffer) => {
@@ -239,7 +252,7 @@ export function renderVideo(project: string, onProgress: (pct: number) => void, 
 
 /** Brings the mix to −14 LUFS with the playbook's tool and puts it back on the video. Needs Python. */
 export async function masterAudio(pb: Playbook, project: string, video: string, out: string, signal?: AbortSignal): Promise<{ ok: boolean; note?: string }> {
-  const tool = resolveIn(pb, `${SOCIAL}/herramientas/master_lufs.py`);
+  const tool = path.join(resolveIn(pb, pb.toolsDir), 'master_lufs.py');
   if (!fs.existsSync(tool)) return { ok: false, note: 'sin herramienta de masterización en el playbook' };
   const tmp = path.join(project, 'out');
   const raw = path.join(tmp, 'mezcla.wav');

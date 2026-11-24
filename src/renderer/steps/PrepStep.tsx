@@ -9,7 +9,6 @@ export { billingTag } from '../components/PrepOptions';
 
 const SOURCE_HINT: Record<string, string> = {
   'produccion-redes': 'Viene de «Producción de redes» en el admin.',
-  'playbook-files': 'Viene del catálogo de casos del playbook.',
 };
 
 export function PrepStep({ episode }: { episode: EpisodeState }) {

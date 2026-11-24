@@ -2,6 +2,7 @@
 // master prompt for the step); these texts only add AdFlow's contract: which files to write and
 // in which format, so the app can show them.
 import type { EpisodeState, StepId } from '@shared/types';
+import { MAX_CLIP_S } from '@shared/schemas';
 
 export function systemPrompt(opts: {
   episode: EpisodeState;
@@ -28,7 +29,7 @@ Reglas de AdFlow (además del playbook):
 - Al terminar responde en 1–3 líneas qué hiciste (sin repetir el contenido de los archivos).
 - Las rutas del playbook (creative/social/…, public/robly-avatar/…) están dentro de
   ${opts.playbookDir || 'la carpeta del playbook'}; puedes leerlas, nunca escribas ahí.
-- No leas PROMPT_MAESTRO_CASOS.md (el brief de abajo ya es el caso), ni la carpeta .adflow/ (estado
+- El brief de abajo ya es el caso. No leas la carpeta .adflow/ (estado
   interno de AdFlow), ni busques código ni textos del sitio: las demos se recrean con textos breves
   escritos para el video. No explores de más: lee lo que el paso necesita y escribe.
 - Paso actual: ${opts.step}. Episodio: «${opts.episode.title}» (serie ${opts.episode.serie}).
@@ -90,6 +91,11 @@ Qué escenas son clip de video lo decides aquí y es definitivo (AdFlow genera e
 real_clip solo para el gancho y las escenas donde un personaje habla («dialogo»); las demás escenas
 reales son real_imagen. No hay clips opcionales: si dudas, es real_imagen.
 
+Cada escena real_clip dura como máximo ${MAX_CLIP_S} s («fin» − «inicio» ≤ ${MAX_CLIP_S}): los clips se generan de
+${MAX_CLIP_S} s. Escribe el gancho y los diálogos para que quepan: una frase de personaje que se dice
+cómodamente en ese tiempo (unas 8–10 palabras). Si un momento necesita más, pártelo en dos escenas
+(un clip y una real_imagen, o dos clips) en lugar de alargar el clip.
+
 El brief es solo una referencia (problema y solución): tú creas el gancho, las escenas y los
 personajes (nombre, edad y vestimenta fija en bloque_personajes). Si la serie ya tiene episodios
 anteriores en la carpeta de episodios, reutiliza sus personajes. La frase, las etiquetas y el enlace
@@ -103,11 +109,12 @@ export function scriptFeedbackPrompt(message: string): string {
 
 "${message}"
 
-Aplícalo en guion.md y escenas.json (mismo formato, tiempos recalculados). No cambies lo que no pidió.`;
+Aplícalo en guion.md y escenas.json (mismo formato, tiempos recalculados). No cambies lo que no pidió.
+Las escenas real_clip siguen durando como máximo ${MAX_CLIP_S} s.`;
 }
 
 export function scriptFixPrompt(errors: string): string {
-  return `escenas.json no cumple el formato que AdFlow necesita:\n${errors}\nCorrígelo sin cambiar el contenido creativo.`;
+  return `escenas.json no cumple el formato que AdFlow necesita:\n${errors}\nCorrígelo cambiando lo mínimo. Si un clip dura de más, acorta su escena (y la frase, si no cabe) o pártela en dos, y recalcula los tiempos en escenas.json y guion.md.`;
 }
 
 export function imagesPrompt(): string {
@@ -200,14 +207,15 @@ export function adCopyPrompt(): string {
 Lee escenas.json y el brief. Escribe anuncio.md con este formato exacto (en español):
 
 # Texto del anuncio
-(2–4 líneas para el post o el anuncio: gancho, solución y llamada a la acción; usa la FRASE y las
-ETIQUETAS del caso, que no van dentro del video; sin cifras de resultados ni promesas medibles)
+(2–4 líneas para el post o el anuncio: gancho, solución y llamada a la acción; escribe tú una
+FRASE corta y 2–3 ETIQUETAS a partir del guion —o usa las del caso si las trae—, que no van dentro
+del video; sin cifras de resultados ni promesas medibles)
 
 # Titular
 (una línea corta para el titular del anuncio)
 
 # Enlace
-(el ENLACE_DEL_ANUNCIO completo según los datos fijos de la serie, con su utm_content)
+(el ENLACE_DEL_ANUNCIO completo: /get-started?lang=es, la variante s= y el i= de los «Datos del anuncio», y su utm_content)
 
 # utm_content
 (solo el valor de utm_content)

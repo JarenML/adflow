@@ -33,7 +33,6 @@ export interface PlaybookManifest {
   name: string;
   version: string;
   masterPrompt: string;
-  casesFile: string;
   configFile: string;
   toolsDir: string;
   files: { path: string; size: number; sha256: string }[];

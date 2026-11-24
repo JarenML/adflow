@@ -17,10 +17,11 @@ import type {
   QueueSnapshot,
   StepId,
 } from '@shared/types';
-import { STEP_IDS } from '@shared/types';
+import { clampRenders, STEP_IDS } from '@shared/types';
 import {
   imagePromptsSchema,
   isClipScene,
+  longClipProblems,
   sceneKind,
   sceneNarration,
   scriptSchema,
@@ -367,12 +368,13 @@ export class Pipeline {
     return source ? getSource(source.id).brief(pb, source.episodeId) : '';
   }
 
-  /** The short reference every step gets; Publicación also gets the ad's data (phrase, tags, link). */
+  /** The short reference every step gets; Publicación also gets the data of the ad's link. */
   private async briefFor(id: string, step: StepId): Promise<string> {
     const e = this.get(id);
     const raw = await this.brief(id).catch(() => '');
-    const ref = scriptReference(raw, { title: e.title, businessType: e.businessType, solution: e.solution });
-    return step === 'publish' ? [ref, adReference(raw)].filter(Boolean).join('\n\n') : ref;
+    const ep = { title: e.title, businessType: e.businessType, solution: e.solution };
+    const ref = scriptReference(raw, ep);
+    return step === 'publish' ? [ref, adReference(raw, ep)].join('\n\n') : ref;
   }
 
   private markPublished(id: string, publication: Publication): EpisodeState {
@@ -525,7 +527,12 @@ export class Pipeline {
       const r = schema.safeParse(json);
       return r.success ? null : r.error!.issues.slice(0, 8).map((i) => `${i.path.join('.')}: ${i.message}`).join('\n');
     };
-    if (step === 'script') return check('escenas.json', scriptSchema);
+    if (step === 'script') {
+      const bad = check('escenas.json', scriptSchema);
+      if (bad) return bad;
+      const long = longClipProblems(scriptSchema.parse(readJsonFile<unknown>(path.join(dir, 'escenas.json'))));
+      return long.length ? long.join('\n') : null;
+    }
     if (step === 'images') return check('prompts_imagenes.json', imagePromptsSchema);
     if (step === 'videos') return check('prompts_video.json', videoPromptsSchema);
     if (step === 'publish') return fs.existsSync(path.join(dir, 'anuncio.md')) ? null : 'No se encontró anuncio.md.';
@@ -935,7 +942,7 @@ export class Pipeline {
       let res: Awaited<ReturnType<typeof renderVideo>> = { ok: false, file: '', error: 'No se ejecutó el render.' };
       await this.queue.add(id, 'render', 'render', 'Render del video', async (signal) => {
         log('Renderiza el video (1080×1920)');
-        res = await renderVideo(project, (pct) => log(`Render ${pct} %`, 'info'), signal);
+        res = await renderVideo(project, (pct) => log(`Render ${pct} %`, 'info'), signal, clampRenders(loadSettings().concurrency.render));
       });
       return res;
     };

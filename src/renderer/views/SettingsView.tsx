@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BookOpen, Brain, CheckCircle2, CircleAlert, CircleDashed, FolderOpen, Gauge, KeyRound, Plug, Plus, RefreshCw, Stethoscope, Trash2 } from 'lucide-react';
-import type { Capability, DiagnosticItem, EpisodeSourceInfo, PlaybookSyncStatus, ProviderInfo, Settings } from '@shared/types';
+import { MAX_RENDERS } from '@shared/types';
+import type { Capability, DiagnosticItem, PlaybookSyncStatus, ProviderInfo, Settings } from '@shared/types';
 import { api } from '../lib/api';
 import { Button, Card, cx, Field, inputCls, SectionTitle, Select, Tag } from '../components/ui';
 import { billingTag } from '../steps/PrepStep';
@@ -18,7 +19,6 @@ export function SettingsView() {
   const [diag, setDiag] = useState<DiagnosticItem[]>();
   const [sections, setSections] = useState<{ id: string; title: string; found: boolean }[]>([]);
   const [saved, setSaved] = useState(false);
-  const [sources, setSources] = useState<EpisodeSourceInfo[]>([]);
   const [cfgOrigin, setCfgOrigin] = useState<{ origin: string; error?: string }>();
   const [teamUrl, setTeamUrl] = useState('');
   const [teamToken, setTeamToken] = useState('');
@@ -47,7 +47,6 @@ export function SettingsView() {
     api.providers().then(setProviders);
     api.secretStatus().then(setSecrets);
     api.secretLabels().then(setLabels);
-    api.episodeSources().then(setSources);
     refreshPlaybook();
   }, []);
   useEffect(() => {
@@ -55,7 +54,6 @@ export function SettingsView() {
   }, [tab, diag]);
 
   if (!s) return null;
-  const pb = s.playbooks.find((p) => p.id === s.activePlaybookId) ?? s.playbooks[0];
   const save = async (next: Settings) => {
     setS(next);
     await api.saveSettings(next);
@@ -63,8 +61,6 @@ export function SettingsView() {
     setTimeout(() => setSaved(false), 1500);
     if (tab === 'playbook') refreshPlaybook();
   };
-  const isTeam = s.episodeSource === 'produccion-redes';
-  const setPb = (patch: Partial<typeof pb>) => save({ ...s, playbooks: s.playbooks.map((p) => (p.id === pb.id ? { ...p, ...patch } : p)) });
 
   const tabs: [Tab, string, typeof BookOpen][] = [
     ['playbook', 'Playbook', BookOpen],
@@ -75,59 +71,39 @@ export function SettingsView() {
   ];
 
   return (
-    <div className="mx-auto grid max-w-[1180px] grid-cols-[220px_1fr] gap-8 px-8 py-8">
-      <nav className="space-y-1">
-        <h1 className="mb-4 text-2xl font-semibold tracking-tight">Ajustes</h1>
+    <div className="flex h-[calc(100%-2.5rem)] flex-col">
+      <div className="drag mx-auto w-full max-w-[1000px] shrink-0 px-8 pt-3">
+      <div className="flex items-end justify-between gap-6 border-b border-line">
+        <div className="flex items-baseline gap-3 pb-2.5">
+          <h1 className="text-2xl font-semibold tracking-tight">Ajustes</h1>
+          {saved && <p className="text-[12px] text-ok">Guardado</p>}
+        </div>
+      <nav className="flex gap-1">
         {tabs.map(([id, label, Icon]) => (
           <button
             key={id}
             onClick={() => setTab(id)}
-            className={cx('no-drag flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium', tab === id ? 'bg-panel-2 text-ink' : 'text-mute hover:bg-panel hover:text-ink')}
+            className={cx(
+              'no-drag -mb-px flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-[13px] font-medium transition-colors',
+              tab === id ? 'border-brand text-ink' : 'border-transparent text-mute hover:text-ink',
+            )}
           >
             <Icon className="size-4" />
             {label}
           </button>
         ))}
-        {saved && <p className="px-3 pt-3 text-[12px] text-ok">Guardado</p>}
       </nav>
+      </div>
+      </div>
 
-      <div className="space-y-5">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-[1000px] space-y-5 px-8 pb-8 pt-6">
         {tab === 'playbook' && (
           <>
             <Card className="p-5">
-              <SectionTitle title="Fuente de episodios" hint="De dónde salen los episodios de la biblioteca y a dónde AdFlow informa el avance." />
-              <div className="space-y-2">
-                {sources.map((src) => (
-                  <label
-                    key={src.id}
-                    className={cx(
-                      'no-drag flex items-start gap-3 rounded-xl border px-4 py-3',
-                      s.episodeSource === src.id ? 'border-brand/50 bg-brand/5' : 'border-line bg-panel-2/30',
-                      src.implemented ? 'cursor-pointer' : 'opacity-60',
-                    )}
-                  >
-                    <input
-                      type="radio"
-                      className="mt-1 accent-[#7c5cff]"
-                      name="episode-source"
-                      disabled={!src.implemented}
-                      checked={s.episodeSource === src.id}
-                      onChange={() => save({ ...s, episodeSource: src.id })}
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="text-[13px] font-semibold">{src.name}</p>
-                        <Tag tone={src.shared ? 'cyan' : 'default'}>{src.shared ? 'Compartida con el equipo' : 'Solo esta computadora'}</Tag>
-                        {!src.implemented && <Tag>Próximamente</Tag>}
-                      </div>
-                      <p className="mt-0.5 text-[12px] text-faint">{src.description}</p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-              <div className="mt-4 rounded-xl border border-line bg-panel-2/30 p-4">
-                <p className="text-[13px] font-semibold">Conexión con «Producción de redes»</p>
-                <p className="mt-0.5 text-[12px] text-faint">Genera tu token en el admin: Producción de redes → Conectar AdFlow. Se guarda cifrado en esta computadora.</p>
+              <SectionTitle title="Conexión con «Producción de redes»" hint="AdFlow trabaja con los episodios y el playbook del admin, y le informa el avance de cada episodio." />
+              <div className="rounded-xl border border-line bg-panel-2/30 p-4">
+                <p className="text-[12px] text-faint">Genera tu token en el admin: Producción de redes → Conectar AdFlow. Se guarda cifrado en esta computadora.</p>
                 <div className="mt-3 grid grid-cols-[1fr_1fr_auto] items-end gap-3">
                   <Field label="Dirección del admin">
                     <input className={inputCls} placeholder="https://robles.ai" value={teamUrl} onChange={(e) => setTeamUrl(e.target.value)} />
@@ -160,94 +136,57 @@ export function SettingsView() {
                 {!teamState.ok && !teamState.error && s.team?.userName && <p className="mt-2 text-[12px] text-faint">Última conexión como {s.team.userName}.</p>}
               </div>
             </Card>
-            {isTeam && (
-              <Card className="p-5">
-                <SectionTitle
-                  title="Playbook del equipo"
-                  hint="Viene del admin: prompts maestros, configuración de AdFlow, plantillas y el Robly oficial. Se edita en el repo de robles.ai y AdFlow baja los cambios solo."
-                  right={
-                    <Button size="sm" icon={<RefreshCw className="size-4" />} loading={pbStatus?.syncing} onClick={() => void syncPlaybook()}>
-                      Actualizar ahora
-                    </Button>
-                  }
-                />
-                <div className="grid grid-cols-3 gap-3">
-                  {(
-                    [
-                      ['Versión', pbStatus?.version ?? '—'],
-                      ['Archivos', String(pbStatus?.files ?? 0)],
-                      ['Actualizado', pbStatus?.syncedAt ? new Date(pbStatus.syncedAt).toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'short' }) : 'Nunca'],
-                    ] as const
-                  ).map(([label, value]) => (
-                    <div key={label} className="rounded-xl border border-line bg-panel-2/40 px-4 py-3">
-                      <p className="text-[11px] uppercase tracking-wide text-faint">{label}</p>
-                      <p className={cx('mt-1 text-[14px] font-semibold', label === 'Versión' && 'font-mono text-[13px]')}>{value}</p>
-                    </div>
-                  ))}
-                </div>
-                {pbStatus?.error && <p className="mt-3 text-[12px] text-bad">No se pudo actualizar: {pbStatus.error}{pbStatus.version ? ' Se usa la última copia descargada.' : ''}</p>}
-                {!pbStatus?.error && pbStatus?.changed ? <p className="mt-3 text-[12px] text-ok">Última actualización: {pbStatus.changed} archivo(s) nuevos o cambiados.</p> : null}
-              </Card>
-            )}
-            {isTeam && (
-              <Card className="p-5">
-                <SectionTitle title="Dónde se guardan los episodios" hint="Cada episodio es una carpeta con su guion, imágenes, clips y voces. Los videos pesan: puedes llevarla a otro disco." />
-                <div className="flex items-center gap-2">
-                  <input className={cx(inputCls, 'font-mono text-[12px]')} value={storage} readOnly />
-                  <Button icon={<FolderOpen className="size-4" />} onClick={() => api.openPath(storage)}>
-                    Abrir
-                  </Button>
-                  <Button
-                    onClick={async () => {
-                      const d = await api.pickFolder();
-                      if (d) await save({ ...s, storageDir: d });
-                      api.storagePath().then(setStorage);
-                    }}
-                  >
-                    Cambiar
-                  </Button>
-                  {s.storageDir && (
-                    <Button variant="ghost" onClick={async () => { await save({ ...s, storageDir: '' }); api.storagePath().then(setStorage); }}>
-                      Usar la de AdFlow
-                    </Button>
-                  )}
-                </div>
-                <p className="mt-2 text-[11.5px] text-faint">Los episodios nuevos se crean aquí; los que ya existen se quedan donde están. El guion aprobado de cada uno se guarda además en el admin.</p>
-              </Card>
-            )}
-            {!isTeam && (
             <Card className="p-5">
-              <SectionTitle title="Playbook activo" hint="AdFlow lee las reglas del playbook desde un repositorio de esta computadora." />
-              <div className="space-y-4">
-                <Field label="Nombre">
-                  <input className={inputCls} value={pb.name} onChange={(e) => setPb({ name: e.target.value })} />
-                </Field>
-                <Field label="Carpeta del repositorio" hint="Por ejemplo, tu clon de robles.ai.">
-                  <div className="flex gap-2">
-                    <input className={inputCls} value={pb.rootDir} onChange={(e) => setPb({ rootDir: e.target.value })} />
-                    <Button icon={<FolderOpen className="size-4" />} onClick={async () => { const d = await api.pickFolder(); if (d) setPb({ rootDir: d }); }}>
-                      Elegir
-                    </Button>
+              <SectionTitle
+                title="Playbook del equipo"
+                hint="Viene del admin: prompts maestros, configuración de AdFlow, plantillas y el Robly oficial. Se edita en el repo de robles.ai y AdFlow baja los cambios solo."
+                right={
+                  <Button size="sm" icon={<RefreshCw className="size-4" />} loading={pbStatus?.syncing} onClick={() => void syncPlaybook()}>
+                    Actualizar ahora
+                  </Button>
+                }
+              />
+              <div className="grid grid-cols-3 gap-3">
+                {(
+                  [
+                    ['Versión', pbStatus?.version ?? '—'],
+                    ['Archivos', String(pbStatus?.files ?? 0)],
+                    ['Actualizado', pbStatus?.syncedAt ? new Date(pbStatus.syncedAt).toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'short' }) : 'Nunca'],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-line bg-panel-2/40 px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-wide text-faint">{label}</p>
+                    <p className={cx('mt-1 text-[14px] font-semibold', label === 'Versión' && 'font-mono text-[13px]')}>{value}</p>
                   </div>
-                </Field>
-                <div className="grid grid-cols-2 gap-4">
-                  {(
-                    [
-                      ['masterPrompt', 'Prompt maestro'],
-                      ['casesFile', 'Catálogo de casos'],
-                      ['trackingFile', 'Seguimiento'],
-                      ['episodesRoot', 'Carpeta de episodios'],
-                      ['configFile', 'Configuración de AdFlow'],
-                    ] as const
-                  ).map(([k, label]) => (
-                    <Field key={k} label={label}>
-                      <input className={cx(inputCls, 'font-mono text-[12px]')} value={pb[k]} onChange={(e) => setPb({ [k]: e.target.value })} />
-                    </Field>
-                  ))}
-                </div>
+                ))}
               </div>
+              {pbStatus?.error && <p className="mt-3 text-[12px] text-bad">No se pudo actualizar: {pbStatus.error}{pbStatus.version ? ' Se usa la última copia descargada.' : ''}</p>}
+              {!pbStatus?.error && pbStatus?.changed ? <p className="mt-3 text-[12px] text-ok">Última actualización: {pbStatus.changed} archivo(s) nuevos o cambiados.</p> : null}
             </Card>
-            )}
+            <Card className="p-5">
+              <SectionTitle title="Dónde se guardan los episodios" hint="Cada episodio es una carpeta con su guion, imágenes, clips y voces. Los videos pesan: puedes llevarla a otro disco." />
+              <div className="flex items-center gap-2">
+                <input className={cx(inputCls, 'font-mono text-[12px]')} value={storage} readOnly />
+                <Button icon={<FolderOpen className="size-4" />} onClick={() => api.openPath(storage)}>
+                  Abrir
+                </Button>
+                <Button
+                  onClick={async () => {
+                    const d = await api.pickFolder();
+                    if (d) await save({ ...s, storageDir: d });
+                    api.storagePath().then(setStorage);
+                  }}
+                >
+                  Cambiar
+                </Button>
+                {s.storageDir && (
+                  <Button variant="ghost" onClick={async () => { await save({ ...s, storageDir: '' }); api.storagePath().then(setStorage); }}>
+                    Usar la de AdFlow
+                  </Button>
+                )}
+              </div>
+              <p className="mt-2 text-[11.5px] text-faint">Los episodios nuevos se crean aquí; los que ya existen se quedan donde están. El guion aprobado de cada uno se guarda además en el admin.</p>
+            </Card>
             <Card className="p-5">
               <SectionTitle
                 title="Secciones que recibe Claude"
@@ -255,16 +194,11 @@ export function SettingsView() {
                 right={
                   cfgOrigin && (
                     <Tag tone={cfgOrigin.origin === 'playbook' ? 'ok' : cfgOrigin.origin === 'preset' ? 'warn' : 'bad'}>
-                      {cfgOrigin.origin === 'playbook' ? (isTeam ? 'Desde el playbook del equipo' : `Desde ${pb.configFile}`) : cfgOrigin.origin === 'preset' ? 'Preset de AdFlow' : 'Sin configuración'}
+                      {cfgOrigin.origin === 'playbook' ? 'Desde el playbook del equipo' : cfgOrigin.origin === 'preset' ? 'Preset de AdFlow' : 'Sin configuración'}
                     </Tag>
                   )
                 }
               />
-              {cfgOrigin?.origin === 'preset' && !isTeam && (
-                <p className="mb-3 text-[11.5px] text-faint">
-                  El repo del playbook aún no tiene <span className="font-mono">{pb.configFile}</span>; se usa la copia que trae AdFlow. Al agregarlo al repo, el equipo comparte la misma configuración.
-                </p>
-              )}
               {cfgOrigin?.error && <p className="mb-3 text-[11.5px] text-bad">{cfgOrigin.error}</p>}
               <div className="grid grid-cols-3 gap-1.5">
                 {sections.map((sec) => (
@@ -428,12 +362,17 @@ export function SettingsView() {
                   />
                 </Field>
               ))}
-              <Field label="Render" hint="1 en total (fijo)">
-                <Select value="1" onChange={() => {}} options={[{ value: '1', label: '1' }]} disabled />
+              <Field label="Render" hint="En total, en esta computadora">
+                <Select
+                  value={String(s.concurrency.render)}
+                  onChange={(v) => save({ ...s, concurrency: { ...s.concurrency, render: Number(v) } })}
+                  options={Array.from({ length: MAX_RENDERS }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))}
+                />
               </Field>
             </div>
             <p className="mt-3 text-[12px] text-faint">
-              El render es uno a la vez en toda la computadora: cada render ya usa casi toda la CPU. Con voces de HeyGen, una sola sesión de Claude genera todas las frases del
+              Los renders se reparten la CPU de esta computadora: con más de uno a la vez, cada uno usa una parte de los núcleos. Solo conviene subirlo con una CPU de 8 núcleos o más
+              y 32 GB de RAM; si no, terminan igual o más tarde que uno detrás del otro. Con voces de HeyGen, una sola sesión de Claude genera todas las frases del
               episodio (cuenta como un ítem). Más ítems a la vez no gastan más en total, pero llegan antes al límite de uso de Codex, ElevenLabs o Claude.
             </p>
             <Field label="Tu nombre (para el seguimiento del equipo)">
@@ -469,6 +408,7 @@ export function SettingsView() {
             </div>
           </Card>
         )}
+      </div>
       </div>
     </div>
   );

@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { EpisodeState, Playbook, Settings, StepId } from '@shared/types';
-import { STEP_IDS } from '@shared/types';
+import { clampRenders, STEP_IDS } from '@shared/types';
 
 let dataDir = '';
 
@@ -37,19 +37,22 @@ export function defaultPlaybook(rootDir = ''): Playbook {
     id: 'robles-ai',
     name: 'Robles.AI · Videos de redes',
     rootDir,
-    masterPrompt: 'creative/social/PROMPT_MAESTRO_VIDEO.md',
-    casesFile: 'creative/social/PROMPT_MAESTRO_CASOS.md',
-    trackingFile: 'creative/social/SEGUIMIENTO_SERIES.md',
+    masterPrompt: `${PLAYBOOK}/PROMPT_MAESTRO_VIDEO.md`,
     episodesRoot: 'creative/social',
-    toolsDir: 'creative/social/herramientas',
-    configFile: 'adflow.playbook.json',
+    toolsDir: `${PLAYBOOK}/herramientas`,
+    configFile: `${PLAYBOOK}/adflow.playbook.json`,
   };
 }
+
+/** Where robles.ai keeps its playbook since Nov 2026 (before: loose in creative/social/). */
+const PLAYBOOK = 'creative/social/playbook';
+
+
 
 function guessRoblesRoot(): string {
   const candidates = [process.env.ADFLOW_PLAYBOOK_ROOT, path.resolve(process.cwd(), '..', 'robles.ai')];
   for (const c of candidates) {
-    if (c && fs.existsSync(path.join(c, 'creative', 'social', 'PROMPT_MAESTRO_VIDEO.md'))) return c;
+    if (c && (fs.existsSync(path.join(c, PLAYBOOK, 'PROMPT_MAESTRO_VIDEO.md')) || fs.existsSync(path.join(c, 'creative', 'social', 'PROMPT_MAESTRO_VIDEO.md')))) return c;
   }
   return '';
 }
@@ -58,7 +61,7 @@ export function defaultSettings(): Settings {
   return {
     playbooks: [defaultPlaybook(guessRoblesRoot())],
     activePlaybookId: 'robles-ai',
-    episodeSource: 'playbook-files',
+    episodeSource: 'produccion-redes',
     team: { url: '' },
     claude: {
       model: 'opus',
@@ -67,7 +70,7 @@ export function defaultSettings(): Settings {
       defaultAccount: 'system',
     },
     defaults: { brain: 'claude-cli', image: 'codex-cli', video: 'manual', voice: 'windows-sapi', music: 'none' },
-    concurrency: { image: 2, clip: 2, voice: 2, episodes: 3 },
+    concurrency: { image: 2, clip: 2, voice: 2, render: 1, episodes: 3 },
     allowPaidProviders: false,
     userName: '',
     storageDir: '',
@@ -84,15 +87,17 @@ export function loadSettings(): Settings {
     ...saved,
     claude: { ...base.claude, ...saved.claude },
     defaults: { ...base.defaults, ...saved.defaults },
-    // Older settings also had brain and render (now fixed): only the configurable ones are kept.
+    // Older settings also had brain (now fixed): only the configurable ones are kept.
     concurrency: {
       image: saved.concurrency?.image ?? base.concurrency.image,
       clip: saved.concurrency?.clip ?? base.concurrency.clip,
       voice: saved.concurrency?.voice ?? base.concurrency.voice,
+      render: clampRenders(saved.concurrency?.render ?? base.concurrency.render),
       episodes: saved.concurrency?.episodes ?? base.concurrency.episodes,
     },
     team: { ...base.team, ...saved.team },
     playbooks: saved.playbooks?.length ? saved.playbooks : base.playbooks,
+    episodeSource: 'produccion-redes',
   };
   // A playbook saved before its root was found picks it up later.
   merged.playbooks = merged.playbooks.map((p) => {
@@ -126,7 +131,6 @@ export interface TeamPlaybookState {
     name: string;
     version: string;
     masterPrompt: string;
-    casesFile: string;
     configFile: string;
     toolsDir: string;
     files: { path: string; size: number; sha256: string }[];
@@ -148,20 +152,16 @@ export function teamPlaybook(s: Settings): Playbook {
     name: m?.name ?? 'Playbook del equipo',
     origin: 'team',
     rootDir: m ? teamPlaybookFiles() : '',
-    masterPrompt: m?.masterPrompt ?? 'creative/social/PROMPT_MAESTRO_VIDEO.md',
-    casesFile: m?.casesFile ?? 'creative/social/PROMPT_MAESTRO_CASOS.md',
-    // Not part of the package: the admin replaced the tracking file.
-    trackingFile: 'creative/social/SEGUIMIENTO_SERIES.md',
+    masterPrompt: m?.masterPrompt ?? `${PLAYBOOK}/PROMPT_MAESTRO_VIDEO.md`,
     episodesRoot: episodesDir(s),
-    toolsDir: m?.toolsDir ?? 'creative/social/herramientas',
-    configFile: m?.configFile ?? 'creative/social/adflow.playbook.json',
+    toolsDir: m?.toolsDir ?? `${PLAYBOOK}/herramientas`,
+    configFile: m?.configFile ?? `${PLAYBOOK}/adflow.playbook.json`,
   };
 }
 
-/** With the team admin as the source, the playbook comes from the admin too; otherwise from a folder. */
+/** The playbook always comes from the team admin (the offline, folder-based mode was removed in Nov 2026). */
 export function activePlaybook(s: Settings): Playbook {
-  if (s.episodeSource === 'produccion-redes') return teamPlaybook(s);
-  return s.playbooks.find((p) => p.id === s.activePlaybookId) ?? s.playbooks[0];
+  return teamPlaybook(s);
 }
 
 export function resolveIn(p: Playbook, rel: string): string {

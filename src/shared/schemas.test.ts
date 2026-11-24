@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { sceneDuration, sceneKind, sceneNarration, scriptSchema } from './schemas';
+import { longClipProblems, sceneDuration, sceneKind, sceneNarration, scriptSchema } from './schemas';
 import { checkScript, playbookConfigSchema } from './playbookConfig';
 import preset from '../../presets/robles-ai.playbook.json';
 
@@ -30,5 +30,20 @@ describe.skipIf(!fs.existsSync(real))('real episode', () => {
     expect(checks['kind-logo']).toBe(true);
     expect(checks.last).toBe(true);
     expect(checks['count-2d']).toBe(true);
+  });
+});
+
+describe('longClipProblems', () => {
+  const script = (escenas: { id: string; tipo: string; inicio: number; fin: number }[]) => scriptSchema.parse({ escenas });
+  it('flags clip scenes longer than 4 s, and only those', () => {
+    const p = longClipProblems(
+      script([
+        { id: 'S01', tipo: 'real_clip', inicio: 0, fin: 4 },
+        { id: 'S02', tipo: 'real_clip', inicio: 4, fin: 9.5 },
+        { id: 'S03', tipo: 'real_imagen', inicio: 9.5, fin: 16 },
+      ]),
+    );
+    expect(p).toHaveLength(1);
+    expect(p[0]).toMatch(/^S02:/);
   });
 });
