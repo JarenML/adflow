@@ -1,0 +1,50 @@
+# Every push to main builds the Windows installer and publishes it as a GitHub Release.
+# Installed copies of AdFlow read that release (src/main/updater.ts) and update themselves.
+#
+# Version: major.minor come from package.json; the patch is this workflow's run number, so every
+# release is higher than the one before. To start a new series, change "version" to e.g. 0.2.0.
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type check and tests
+        run: |
+          npm run check
+          npm test
+
+      - name: Set version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')").${{ github.run_number }}
+          npm pkg set version=$VERSION
+          echo "Version $VERSION"
+
+      - run: npm run build
+
+      - name: Build and publish installer
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

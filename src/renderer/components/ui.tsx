@@ -137,16 +137,16 @@ export function Select({ value, onChange, options, disabled }: { value: string; 
 
 export function Logo({ size = 28 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
+    // Logo «Flujo»: an A crossed by a flowing line (same drawing as build/icon.svg).
+    <svg width={size} height={size} viewBox="0 0 120 120" aria-hidden>
       <defs>
-        <linearGradient id="adflow-g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#7c5cff" />
-          <stop offset="1" stopColor="#22d3ee" />
+        <linearGradient id="adflow-flow" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0" stopColor="#22d3ee" />
+          <stop offset="1" stopColor="#7c5cff" />
         </linearGradient>
       </defs>
-      <rect width="32" height="32" rx="9" fill="url(#adflow-g)" />
-      <path d="M7 21c3.2 0 4.4-10 8-10s4.4 10 8 10" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" />
-      <circle cx="23.5" cy="11" r="2.2" fill="#fff" />
+      <path d="M22 100 L60 20 L98 100" fill="none" stroke="currentColor" strokeWidth="11" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M10 76 C 40 58, 72 88, 108 62" fill="none" stroke="url(#adflow-flow)" strokeWidth="9" strokeLinecap="round" />
     </svg>
   );
 }

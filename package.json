@@ -11,9 +11,12 @@
     "start": "node scripts/start.mjs",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "snapshot": "node scripts/snapshot.mjs"
+    "snapshot": "node scripts/snapshot.mjs",
+    "dist": "npm run build && electron-builder --win --publish never",
+    "icons": "node scripts/make-icons.mjs"
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "framer-motion": "^14.14.0",
     "lucide-react": "^1.77.0",
     "react": "^19.3.1",
@@ -27,10 +30,40 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
     "electron": "^45.4.1",
+    "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
+    "png-to-ico": "^3.0.2",
+    "sharp": "^0.35.5",
     "tailwindcss": "^4.3.5",
     "typescript": "5.9.3",
     "vite": "^8.3.8",
     "vitest": "^5.1.1"
+  },
+  "build": {
+    "appId": "pe.iolab.adflow",
+    "productName": "AdFlow",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json",
+      "!**/*.map",
+      "!node_modules/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "JarenML",
+      "repo": "adflow",
+      "releaseType": "release"
+    },
+    "artifactName": "AdFlow-Setup-${version}.${ext}"
   }
 }

@@ -14,6 +14,7 @@ import { listVoices, voiceById, voiceSample } from './providers/voices';
 import { getSecrets, secretStatus, setSecret } from './secrets';
 import { activePlaybook, episodesDir, getDataDir, initStore, loadSettings, saveSettings } from './store';
 import { syncTeamPlaybook, teamPlaybookStatus } from './teamPlaybook';
+import { startAutoUpdates } from './updater';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'adflow', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
@@ -37,6 +38,8 @@ function createWindow() {
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#07080c', symbolColor: '#a1a1aa', height: 40 },
     show: false,
+    // Installed copies take the icon of AdFlow.exe; development runs (electron.exe) need it set.
+    icon: app.isPackaged ? undefined : path.join(__dirname, '../../build/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -172,6 +175,7 @@ void app.whenReady().then(() => {
   });
   registerIpc();
   createWindow();
+  startAutoUpdates();
   // The team playbook is refreshed in the background at every start.
   if (loadSettings().episodeSource === 'produccion-redes') void syncTeamPlaybook();
 });
