@@ -5,6 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type {
   ActivityEvent,
+  ClipCandidate,
   ClipItem,
   EpisodeState,
   ImageItem,
@@ -12,27 +13,35 @@ import type {
   NarrationLine,
   PipelineAction,
   Publication,
+  RenderReport,
   QueueSnapshot,
   StepId,
 } from '@shared/types';
 import { STEP_IDS } from '@shared/types';
 import {
   imagePromptsSchema,
+  isClipScene,
   sceneKind,
   sceneNarration,
   scriptSchema,
   videoPromptsSchema,
   type Script,
 } from '@shared/schemas';
-import { runBrain, type BrainEvent } from './brain/claudeCli';
+import { BRAIN_FILE_TOOLS, runBrain, type BrainEvent } from './brain/claudeCli';
+import { masterAudio, mediaDuration, prepareProject, renderVideo, writeMaterialList } from './render';
 import * as P from './brain/prompts';
 import { episodeSlug, serieSlug } from './playbookParse';
 import { stepContext } from './playbook';
 import { getSource } from './sources';
 import { ensureTeamPlaybook } from './teamPlaybook';
 import { toTeamStatus } from '@shared/progress';
+import { adReference, scriptReference } from '@shared/brief';
 import { generateWithCodex } from './providers/codexImage';
-import { provider } from './providers/registry';
+import { provider, SECRET_LABELS } from './providers/registry';
+import { elevenClip, elevenUsedCredits } from './providers/elevenlabs';
+import { DEFAULT_HEYGEN_CREDIT_LIMIT, DEFAULT_VOICE_CREDIT_LIMIT, heygenMaxCredits, lineCredits, planHeygenRun, planVoiceRun } from '@shared/voiceCredits';
+import { downloadClip, mcpClip } from './providers/elevenlabsMcp';
+import { heygenSpeech } from './providers/heygenMcp';
 import { synthesize } from './providers/voices';
 import { WorkQueue } from './queue';
 import {
@@ -54,6 +63,24 @@ export interface PipelineEvents {
 }
 
 const now = () => new Date().toISOString();
+
+/** API keys saved in Settings (loaded lazily: secrets need Electron's safeStorage). */
+function keys(): Record<string, string> {
+  try {
+    return (require('./secrets') as typeof import('./secrets')).getSecrets();
+  } catch {
+    return {};
+  }
+}
+
+/** Why a provider cannot be used now (not connected, credits not allowed, key missing), or null. */
+export function providerBlock(providerId: string, allowPaid: boolean, secrets: Record<string, string>): string | null {
+  const p = provider(providerId);
+  if (!p?.implemented) return `${p?.name ?? providerId} todavía no está conectado en AdFlow.`;
+  if (p.billing === 'credits' && !allowPaid) return `${p.name} gasta créditos: actívalo en Ajustes → Proveedores («Permitir proveedores con créditos»).`;
+  if (p.secret && !secrets[p.secret]) return `Falta la ${SECRET_LABELS[p.secret] ?? p.secret} en Ajustes → Proveedores.`;
+  return null;
+}
 
 /** URL the renderer can load for a local file (served by the adflow:// protocol). */
 export function fileUrl(abs: string): string {
@@ -152,14 +179,16 @@ export class Pipeline {
     return e;
   }
 
-  patch(id: string, patch: Partial<Pick<EpisodeState, 'providers' | 'voice' | 'closingVoice' | 'videoConfig' | 'brain'>>): EpisodeState {
+  patch(id: string, patch: Partial<Pick<EpisodeState, 'providers' | 'voice' | 'voiceCreditLimit' | 'heygenCreditLimit' | 'closingVoice' | 'videoConfig' | 'brain'>>): EpisodeState {
     return this.update(id, (e) => Object.assign(e, patch));
   }
 
   /** What the brain will get about an episode of the active source, before it is created. */
   async sourceBrief(sourceEpisodeId: string): Promise<string> {
     const settings = loadSettings();
-    return getSource(settings.episodeSource).brief(activePlaybook(settings), sourceEpisodeId);
+    const item = (await this.library()).find((i) => i.id === sourceEpisodeId);
+    const raw = await getSource(settings.episodeSource).brief(activePlaybook(settings), sourceEpisodeId);
+    return scriptReference(raw, { title: item?.title ?? '', businessType: item?.businessType, solution: item?.solution, summary: item?.summary });
   }
 
   /** Creates (or opens) the local episode of a source episode and claims it in the source. */
@@ -255,12 +284,20 @@ export class Pipeline {
       }
     }
     if (a.step === 'videos') {
-      if (a.type === 'prepare') return this.brainStep(id, 'videos', P.videosPrompt(), { fresh: true });
+      if (a.type === 'prepare') return this.prepareClips(id);
+      if (a.type === 'addClip') return this.addClip(id, a.sceneId);
+      if (a.type === 'removeClip') return void this.removeClip(id, a.sceneId);
       if (a.type === 'feedback') return this.brainStep(id, 'videos', P.videoFeedbackPrompt(a.sceneId, a.message));
       if (a.type === 'import') return this.importClip(id, a.sceneId);
+      if (a.type === 'generate') return this.generateClips(id, a.sceneIds);
     }
     if (a.step === 'voice') {
-      if (a.type === 'generate') return this.generateVoices(id);
+      if (a.type === 'generate') return this.generateVoices(id, a.lineIds);
+    }
+    if (a.step === 'render') {
+      if (a.type === 'build') return this.buildRender(id, 'build');
+      if (a.type === 'feedback') return this.buildRender(id, 'feedback', a.message);
+      if (a.type === 'rerender') return this.buildRender(id, 'rerender');
     }
     if (a.step === 'publish') {
       if (a.type === 'adCopy') return this.brainStep(id, 'publish', P.adCopyPrompt(), { fresh: true });
@@ -276,6 +313,11 @@ export class Pipeline {
 
   private approve(id: string, step: StepId): EpisodeState {
     if (step === 'script') void this.shareScript(id);
+    // Approving the images opens Videos with the clips the script decided (tipo real_clip) and their
+    // prompts, ready to generate one by one.
+    if (step === 'images' && !fs.existsSync(path.join(this.get(id).dir, 'prompts_video.json'))) {
+      setTimeout(() => void this.act(id, { step: 'videos', type: 'prepare' }), 0);
+    }
     return this.update(id, (e) => {
       e.steps[step] = { ...e.steps[step], status: 'approved', updatedAt: now(), error: undefined };
       const next = STEP_IDS[STEP_IDS.indexOf(step) + 1];
@@ -312,6 +354,14 @@ export class Pipeline {
       source = match ? { id: match.sourceId, episodeId: match.id } : undefined;
     }
     return source ? getSource(source.id).brief(pb, source.episodeId) : '';
+  }
+
+  /** The short reference every step gets; Publicación also gets the ad's data (phrase, tags, link). */
+  private async briefFor(id: string, step: StepId): Promise<string> {
+    const e = this.get(id);
+    const raw = await this.brief(id).catch(() => '');
+    const ref = scriptReference(raw, { title: e.title, businessType: e.businessType, solution: e.solution });
+    return step === 'publish' ? [ref, adReference(raw)].filter(Boolean).join('\n\n') : ref;
   }
 
   private markPublished(id: string, publication: Publication): EpisodeState {
@@ -390,7 +440,14 @@ export class Pipeline {
     id: string,
     step: StepId,
     prompt: string,
-    opts: { fresh?: boolean; keepWorking?: boolean } = {},
+    opts: {
+      fresh?: boolean;
+      keepWorking?: boolean;
+      /** Where Claude works (default: the episode folder). */
+      cwd?: string;
+      tools?: string[];
+      allowedTools?: string[];
+    } = {},
   ): Promise<string | undefined> {
     let output: string | undefined;
     this.setStatus(id, step, 'working', { error: undefined });
@@ -400,13 +457,15 @@ export class Pipeline {
         const settings = loadSettings();
         const pb = activePlaybook(settings);
         const e = this.get(id);
-        const caseBlock = await this.brief(id);
+        const caseBlock = await this.briefFor(id, step);
         const ctx = stepContext(pb, step);
         const account = settings.claude.accounts.find((a) => a.id === e.brain.account);
         const onEvent = (b: BrainEvent) => this.activity(id, step, b.kind, b.text);
         const run = (p: string, sessionId?: string) =>
           runBrain({
-            cwd: e.dir,
+            cwd: opts.cwd ?? e.dir,
+            tools: opts.tools,
+            allowedTools: opts.allowedTools,
             prompt: p,
             system: P.systemPrompt({
               episode: e,
@@ -420,7 +479,7 @@ export class Pipeline {
             model: e.brain.model || settings.claude.model,
             effort: settings.claude.effort,
             // Other episodes of the series (continuity) and the playbook's files (templates, Robly, texts).
-            addDirs: [...new Set([resolveIn(pb, pb.episodesRoot), pb.rootDir].filter(Boolean))],
+            addDirs: [...new Set([resolveIn(pb, pb.episodesRoot), pb.rootDir, opts.cwd ? e.dir : ''].filter(Boolean))],
             configDir: account?.configDir,
             signal,
             onEvent,
@@ -513,6 +572,7 @@ export class Pipeline {
         error: st?.error,
         description: scene?.descripcion,
         narration: scene ? sceneNarration(scene)?.text : undefined,
+        clip: scene ? isClipScene(scene) : false,
       };
     });
   }
@@ -563,14 +623,122 @@ export class Pipeline {
 
   // ── Videos ────────────────────────────────────────────────────────────────────────────────
 
+  // The script decides which scenes are clips (tipo real_clip). Videos takes exactly those; the
+  // brain only writes their prompts. Adding or removing a clip changes the scene's tipo in the script.
+
+  /** Clip scenes of the script that have an image (the clip's first frame), in script order. */
+  private clipScenes(id: string): P.ClipScene[] {
+    return (this.script(id).script?.escenas ?? [])
+      .filter((s) => isClipScene(s) && !!s.imagen)
+      .map((s) => {
+        const d = (s as { dialogo?: { texto?: string } | null }).dialogo;
+        return { id: s.id, image: s.imagen!, dialogue: d?.texto?.trim() || undefined };
+      });
+  }
+
+  /** Real scenes that stay as an image: they could become a clip. */
+  clipCandidates(id: string): ClipCandidate[] {
+    const dir = this.get(id).dir;
+    return (this.script(id).script?.escenas ?? [])
+      .filter((s) => sceneKind(s.tipo) === 'real' && !isClipScene(s) && !!s.imagen)
+      .map((s) => {
+        const abs = path.join(dir, s.imagen!);
+        return { sceneId: s.id, image: s.imagen!, imageUrl: fs.existsSync(abs) ? fileUrl(abs) : undefined, description: s.descripcion };
+      });
+  }
+
+  private videoPromptsFile = (id: string) => path.join(this.get(id).dir, 'prompts_video.json');
+
+  /** Keeps prompts_video.json to exactly the clip scenes of the script. Returns the ones without a prompt. */
+  private syncClipList(id: string): string[] {
+    const wanted = this.clipScenes(id).map((s) => s.id);
+    const file = this.videoPromptsFile(id);
+    const json = readJsonFile<{ clips?: { escena: string }[] }>(file);
+    if (!json || !Array.isArray(json.clips)) return wanted;
+    const kept = json.clips.filter((c) => wanted.includes(c.escena));
+    if (kept.length !== json.clips.length) writeJson(file, { ...json, clips: kept });
+    this.update(id, () => {});
+    return wanted.filter((w) => !kept.some((c) => c.escena === w));
+  }
+
+  /** Writes the prompts of the script's clip scenes (no clips: an empty list, nothing to generate). */
+  private async prepareClips(id: string): Promise<void> {
+    const scenes = this.clipScenes(id);
+    if (!scenes.length) {
+      writeJson(this.videoPromptsFile(id), { clips: [] });
+      this.activity(id, 'videos', 'info', 'El guion no tiene escenas con clip: todas van como imagen con movimiento.');
+      this.setStatus(id, 'videos', 'review', { error: undefined, note: 'El guion no lleva clips de video.' });
+      return;
+    }
+    this.activity(id, 'videos', 'info', `Clips del guion: ${scenes.map((s) => s.id).join(', ')}. Claude escribe sus prompts.`);
+    await this.brainStep(id, 'videos', P.videosPrompt(scenes), { fresh: true });
+    const missing = this.syncClipList(id);
+    if (missing.length) this.setStatus(id, 'videos', 'error', { error: `Falta el prompt de ${missing.join(', ')}` });
+  }
+
+  /** Changes a scene's tipo in escenas.json (clip ↔ image). */
+  private setSceneClip(id: string, sceneId: string, clip: boolean): void {
+    const file = path.join(this.get(id).dir, 'escenas.json');
+    const json = readJsonFile<{ escenas?: { id: string; tipo: string; motor?: string }[] }>(file);
+    const scene = json?.escenas?.find((s) => s.id === sceneId);
+    if (!json || !scene) throw new Error(`No se encontró la escena ${sceneId} en el guion.`);
+    scene.tipo = clip ? 'real_clip' : 'real_imagen';
+    scene.motor = clip ? 'Veo 3.1 Fast 4 s' : 'Remotion: imagen con push-in';
+    writeJson(file, json);
+  }
+
+  private async addClip(id: string, sceneId: string): Promise<void> {
+    this.setSceneClip(id, sceneId, true);
+    this.activity(id, 'videos', 'info', `${sceneId} pasa a ser clip en el guion. Claude escribe su prompt.`);
+    const scene = this.clipScenes(id).find((s) => s.id === sceneId);
+    if (!scene) return;
+    if (!fs.existsSync(this.videoPromptsFile(id))) writeJson(this.videoPromptsFile(id), { clips: [] });
+    await this.brainStep(id, 'videos', P.videoAddPrompt(scene), { fresh: true });
+    const missing = this.syncClipList(id);
+    if (missing.length) this.setStatus(id, 'videos', 'error', { error: `Falta el prompt de ${missing.join(', ')}` });
+  }
+
+  private removeClip(id: string, sceneId: string): void {
+    this.setSceneClip(id, sceneId, false);
+    this.syncClipList(id);
+    const state = this.clipState(id);
+    delete state[sceneId];
+    writeJson(this.clipStateFile(id), state);
+    this.activity(id, 'videos', 'info', `${sceneId} vuelve a ser imagen con movimiento (su clip, si había, queda en la carpeta video/).`);
+    this.update(id, () => {});
+  }
+
+  private clipStateFile(id: string) {
+    return path.join(this.get(id).dir, '.adflow', 'clips.json');
+  }
+
+  private clipState(id: string): Record<string, { status: ClipItem['status']; error?: string; flowUrl?: string }> {
+    return readJsonFile(this.clipStateFile(id)) ?? {};
+  }
+
+  private setClipState(id: string, sceneId: string, s: { status: ClipItem['status']; error?: string; flowUrl?: string }) {
+    const all = this.clipState(id);
+    all[sceneId] = { flowUrl: all[sceneId]?.flowUrl, ...s };
+    writeJson(this.clipStateFile(id), all);
+    this.ev.episode(this.get(id));
+  }
+
   clips(id: string): ClipItem[] {
     const e = this.get(id);
     const parsed = videoPromptsSchema.safeParse(readJsonFile(path.join(e.dir, 'prompts_video.json')));
     if (!parsed.success) return [];
+    const state = this.clipState(id);
+    // A "working" left by a closed app (no job in the queue) is not working anymore.
+    const busy = this.queue.isBusy(id, 'videos');
     return parsed.data.clips.map((c) => {
       const abs = path.join(e.dir, c.archivo);
       const img = path.join(e.dir, c.imagen);
+      const st = state[c.escena];
+      const exists = fs.existsSync(abs);
       return {
+        status: st?.status === 'working' && busy ? 'working' : st?.status === 'error' ? 'error' : exists ? 'done' : 'pending',
+        error: st?.status === 'error' ? st.error : undefined,
+        flowUrl: st?.flowUrl,
         sceneId: c.escena,
         image: c.imagen,
         imageUrl: fs.existsSync(img) ? fileUrl(img) : undefined,
@@ -593,8 +761,199 @@ export class Pipeline {
     const dest = path.join(this.get(id).dir, clip.file);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.copyFileSync(src, dest);
+    this.setClipState(id, sceneId, { status: 'done' });
     this.activity(id, 'videos', 'result', `Clip de ${sceneId} importado`);
     this.update(id, () => {});
+  }
+
+  /** Generates the clips with the episode's video provider (ElevenLabs API or MCP), one queue job per clip. */
+  private async generateClips(id: string, sceneIds?: string[]): Promise<void> {
+    const e = this.get(id);
+    const cfg = { provider: e.providers.video, model: 'veo-3.1-fast', durationS: 4, resolution: '1080p' as const, ...e.videoConfig };
+    const generates = cfg.provider === 'elevenlabs-video' || cfg.provider === 'elevenlabs-mcp';
+    const blocked = generates ? providerBlock(cfg.provider, loadSettings().allowPaidProviders, keys()) : 'Este proveedor de video no genera desde AdFlow: sube el clip a mano.';
+    if (blocked) {
+      this.setStatus(id, 'videos', 'error', { error: blocked });
+      return;
+    }
+    // One attempt per image: an image already being generated is never sent again.
+    const clips = this.clips(id).filter((c) => (!sceneIds?.length || sceneIds.includes(c.sceneId)) && c.status !== 'working');
+    if (!clips.length) return;
+    this.setStatus(id, 'videos', 'working', { error: undefined });
+    for (const c of clips) this.setClipState(id, c.sceneId, { status: 'working' });
+    const failed: string[] = [];
+    const archive = (c: ClipItem) => {
+      const abs = path.join(e.dir, c.file);
+      if (!fs.existsSync(abs)) return;
+      const vdir = path.join(path.dirname(abs), 'variantes');
+      fs.mkdirSync(vdir, { recursive: true });
+      const base = path.basename(abs, path.extname(abs));
+      const n = fs.readdirSync(vdir).filter((f) => f.startsWith(`${base}_v`)).length + 1;
+      fs.renameSync(abs, path.join(vdir, `${base}_v${n}${path.extname(abs)}`));
+    };
+
+    if (cfg.provider === 'elevenlabs-mcp') {
+      const settings = loadSettings();
+      const account = settings.claude.accounts.find((a) => a.id === e.brain.account);
+      await Promise.all(
+        clips.map((c) =>
+          this.queue.add(id, 'videos', 'clip', `Clip ${c.sceneId} (MCP)`, async (signal) => {
+            this.activity(id, 'videos', 'tool', `Claude genera el clip ${c.sceneId} con el MCP de ElevenLabs`);
+            const res = await mcpClip({
+              dir: e.dir,
+              sceneId: c.sceneId,
+              image: c.image,
+              file: c.file,
+              prompt: c.prompt,
+              durationS: cfg.durationS,
+              resolution: cfg.resolution,
+              audio: c.audio,
+              flowName: `${e.title} · ${c.sceneId}`,
+              configDir: account?.configDir,
+              signal,
+              onEvent: (b) => this.activity(id, 'videos', b.kind, `${c.sceneId} · ${b.text}`),
+            });
+            if (res.costUsd) this.update(id, (x) => x.costs.push({ at: now(), step: 'videos', provider: 'claude-cli', label: `Claude · clip ${c.sceneId}`, usd: res.costUsd }));
+            try {
+              if (!res.ok || !res.contentUrl) throw new Error(res.error ?? 'El clip no se generó.');
+              archive(c);
+              await downloadClip(res.contentUrl, path.join(e.dir, c.file), signal);
+              this.setClipState(id, c.sceneId, { status: 'done', flowUrl: res.flowUrl });
+              this.update(id, (x) =>
+                x.costs.push({ at: now(), step: 'videos', provider: 'elevenlabs-mcp', label: `Clip ${c.sceneId}${res.credits ? ` · ${Math.round(res.credits)} créditos` : ''}` }),
+              );
+              this.activity(id, 'videos', 'result', `Clip ${c.sceneId} listo${res.credits ? ` (${Math.round(res.credits)} créditos)` : ''}`);
+            } catch (err) {
+              failed.push(c.sceneId);
+              const msg = String((err as Error)?.message ?? err);
+              this.setClipState(id, c.sceneId, { status: 'error', error: msg, flowUrl: res.flowUrl });
+              this.activity(id, 'videos', 'error', `${c.sceneId}: ${msg}`);
+            }
+          }),
+        ),
+      );
+      this.setStatus(id, 'videos', failed.length ? 'error' : 'review', failed.length ? { error: `No se generó: ${failed.join(', ')}` } : {});
+      return;
+    }
+
+    await Promise.all(
+      clips.map((c) =>
+        this.queue.add(id, 'videos', 'clip', `Clip ${c.sceneId}`, async (signal) => {
+          this.activity(id, 'videos', 'tool', `ElevenLabs genera el clip ${c.sceneId}`);
+          try {
+            await elevenClip({
+              key: keys().elevenlabs,
+              image: path.join(e.dir, c.image),
+              prompt: c.prompt,
+              // Always Veo 3.1 Fast (decision of the owner): cheaper and enough for 4–8 s clips.
+              model: 'veo-3.1-fast',
+              durationS: cfg.durationS,
+              resolution: cfg.resolution,
+              audio: c.audio,
+              outFile: path.join(e.dir, c.file),
+              signal,
+              onStatus: (s) => this.activity(id, 'videos', 'info', `${c.sceneId}: ${s}`),
+            });
+            this.setClipState(id, c.sceneId, { status: 'done' });
+            this.activity(id, 'videos', 'result', `Clip ${c.sceneId} listo`);
+          } catch (err) {
+            failed.push(c.sceneId);
+            const msg = String((err as Error)?.message ?? err);
+            this.setClipState(id, c.sceneId, { status: 'error', error: msg });
+            this.activity(id, 'videos', 'error', `${c.sceneId}: ${msg}`);
+          }
+        }),
+      ),
+    );
+    this.setStatus(id, 'videos', failed.length ? 'error' : 'review', failed.length ? { error: `No se generó: ${failed.join(', ')}` } : {});
+  }
+
+  // ── Render final ───────────────────────────────────────────────────────────────────────────
+
+  private renderReportFile = (id: string) => path.join(this.get(id).dir, '.adflow', 'render.json');
+
+  renderReport(id: string): RenderReport | null {
+    return readJsonFile<RenderReport>(this.renderReportFile(id));
+  }
+
+  /**
+   * build: prepares the Remotion project, Claude assembles it, AdFlow renders.
+   * feedback: Claude applies a change on the same project, then it renders again.
+   * rerender: renders the project as it is (after editing it by hand, or new voices or clips).
+   */
+  private async buildRender(id: string, mode: 'build' | 'feedback' | 'rerender', message?: string): Promise<void> {
+    const e = this.get(id);
+    const pb = activePlaybook(loadSettings());
+    const log = (t: string, kind: ActivityEvent['kind'] = 'tool') => this.activity(id, 'render', kind, t);
+    const fail = (error: string) => {
+      log(error, 'error');
+      this.setStatus(id, 'render', 'error', { error: error.split(/\r?\n/)[0].slice(0, 300) });
+    };
+    this.setStatus(id, 'render', 'working', { error: undefined });
+
+    // 1. The project, with the episode's latest images, clips and voices.
+    let project = '';
+    let material = '';
+    let problem = '';
+    await this.queue.add(id, 'render', 'render', 'Proyecto Remotion', async (signal) => {
+      try {
+        const r = await prepareProject(pb, e.dir, e.serie, (t) => log(t), signal);
+        project = r.dir;
+        material = await writeMaterialList(r.dir);
+      } catch (err) {
+        problem = String((err as Error)?.message ?? err);
+      }
+    });
+    if (problem || !project) return fail(problem || 'No se pudo preparar el proyecto Remotion.');
+
+    // 2. Claude assembles (or changes) the scenes. It may check single frames and types.
+    const brain = (prompt: string, fresh = false) =>
+      this.brainStep(id, 'render', prompt, {
+        fresh,
+        keepWorking: true,
+        cwd: project,
+        tools: [...BRAIN_FILE_TOOLS, 'Bash'],
+        allowedTools: ['Bash(npx remotion still:*)', 'Bash(npx remotion compositions:*)', 'Bash(npx tsc:*)'],
+      });
+    if (mode === 'build') await brain(P.renderPrompt(material), !e.brain.sessions.render);
+    if (mode === 'feedback' && message) await brain(P.renderFeedbackPrompt(message));
+    if (this.get(id).steps.render.status === 'error') return;
+
+    // 3. Render; one fix by Claude if it fails.
+    const render = async () => {
+      let res: Awaited<ReturnType<typeof renderVideo>> = { ok: false, file: '', error: 'No se ejecutó el render.' };
+      await this.queue.add(id, 'render', 'render', 'Render del video', async (signal) => {
+        log('Renderiza el video (1080×1920)');
+        res = await renderVideo(project, (pct) => log(`Render ${pct} %`, 'info'), signal);
+      });
+      return res;
+    };
+    let res = await render();
+    if (!res.ok && mode !== 'rerender') {
+      log('El render falló: Claude lo corrige', 'info');
+      await brain(P.renderFixPrompt(res.error ?? ''));
+      res = await render();
+    }
+    if (!res.ok) return fail(`El render falló: ${res.error ?? ''}`);
+
+    // 4. Master to −14 LUFS and leave the final MP4 in the episode folder.
+    const final = path.join(e.dir, `${e.slug}.mp4`);
+    let mastered = false;
+    let note: string | undefined;
+    await this.queue.add(id, 'render', 'render', 'Masterización', async (signal) => {
+      log('Masteriza el audio a −14 LUFS');
+      const m = await masterAudio(pb, project, res.file, final, signal);
+      mastered = m.ok;
+      if (!m.ok) {
+        note = `Sin masterizar (${m.note})`;
+        fs.copyFileSync(res.file, final);
+      }
+    });
+    const durationS = await mediaDuration(project, final);
+    const report: RenderReport = { at: now(), file: path.basename(final), durationS, sizeMB: Math.round((fs.statSync(final).size / 1048576) * 10) / 10, mastered, note };
+    writeJson(this.renderReportFile(id), report);
+    log(`Video final: ${report.file} · ${durationS?.toFixed(1) ?? '?'} s · ${report.sizeMB} MB${note ? ` · ${note}` : ''}`, 'result');
+    this.setStatus(id, 'render', 'review', { note: `Listo: ${report.file}` });
   }
 
   // ── Voice ─────────────────────────────────────────────────────────────────────────────────
@@ -620,33 +979,142 @@ export class Pipeline {
   async previewVoice(id: string, text: string): Promise<{ url?: string; error?: string }> {
     const e = this.get(id);
     if (!e.voice) return { error: 'Elige una voz primero.' };
+    const blocked = providerBlock(e.voice.provider, loadSettings().allowPaidProviders, keys());
+    if (blocked) return { error: blocked };
+    if (e.voice.provider === 'heygen-voice') {
+      // One line through the HeyGen MCP (one call, never repeated).
+      const r = await heygenSpeech({ dir: e.dir, outDir: path.join(e.dir, '.adflow', 'preview'), voiceId: e.voice.voiceId, lines: [{ id: `muestra-${Date.now()}`, text }] });
+      const file = Object.values(r.files)[0];
+      return file ? { url: fileUrl(file) } : { error: Object.values(r.errors)[0] ?? r.error ?? 'HeyGen no devolvió audio.' };
+    }
     const out = path.join(e.dir, '.adflow', 'preview', `muestra-${Date.now()}.wav`);
-    const res = await synthesize(e.voice.provider, e.voice.voiceId, text, out);
+    const res = await synthesize(e.voice.provider, e.voice.voiceId, text, out, keys());
     return res.ok ? { url: fileUrl(res.file) } : { error: res.error };
   }
 
-  private async generateVoices(id: string): Promise<void> {
+  /** The narration through the HeyGen MCP: one Claude run, one call per line, credits measured. */
+  private async generateHeygenVoices(id: string, lineIds?: string[]): Promise<void> {
+    const e = this.get(id);
+    const requested = this.narration(id).filter((l) => !lineIds?.length || lineIds.includes(l.id));
+    if (!requested.length) return;
+    // The credit limit: only the lines whose characters fit (worst case, ceil(chars / 1,000)) are
+    // sent to Claude, and the hook lets it speak only those texts. The rest keep their old take.
+    const limit = e.heygenCreditLimit ?? DEFAULT_HEYGEN_CREDIT_LIMIT;
+    const plan = planHeygenRun(requested.map((l) => l.text), limit);
+    const lines = requested.slice(0, plan.fits);
+    const stoppedAt = plan.fits < requested.length ? requested[plan.fits].id : null;
+    if (!lines.length) {
+      this.setStatus(id, 'voice', 'error', {
+        error: `Límite de ${limit} crédito(s) premium de HeyGen: ${requested[0].id} ya lo pasaría (hasta ${heygenMaxCredits(requested[0].text.length)}). Sube el límite.`,
+      });
+      return;
+    }
+    this.setStatus(id, 'voice', 'working', { error: undefined });
+    let failed = 0;
+    await this.queue.add(id, 'voice', 'voice', `Voces HeyGen (${lines.length})`, async (signal) => {
+      this.activity(
+        id,
+        'voice',
+        'info',
+        `Límite de esta ejecución: ${limit} crédito(s) premium. ${plan.allowedChars} caracteres caben (como máximo ${heygenMaxCredits(plan.allowedChars)}).${stoppedAt ? ` Se detiene antes de ${stoppedAt}: no se envía.` : ''}`,
+      );
+      this.activity(id, 'voice', 'tool', `Claude genera ${lines.length} frase(s) con el MCP de HeyGen (una llamada por frase)`);
+      const r = await heygenSpeech({
+        dir: e.dir,
+        outDir: path.join(e.dir, 'voces', '.heygen'),
+        voiceId: e.voice!.voiceId,
+        lines: lines.map((l) => ({ id: l.id, text: l.text })),
+        signal,
+        onEvent: (b) => this.activity(id, 'voice', b.kind, b.text),
+      });
+      if (r.error) this.activity(id, 'voice', 'error', r.error);
+      for (const l of lines) {
+        const file = r.files[l.id];
+        if (file) {
+          // A new take replaces the old one in either format.
+          for (const ext of ['wav', 'mp3']) fs.rmSync(path.join(e.dir, 'voces', `${l.id}.${ext}`), { force: true });
+          fs.renameSync(file, path.join(e.dir, 'voces', `${l.id}.mp3`));
+        } else {
+          failed++;
+          this.activity(id, 'voice', 'error', `${l.id}: ${r.errors[l.id] ?? 'sin audio'}`);
+        }
+      }
+      const spent = r.creditsBefore != null && r.creditsAfter != null ? r.creditsBefore - r.creditsAfter : null;
+      this.activity(
+        id,
+        'voice',
+        'result',
+        `HeyGen: ${lines.length - failed} de ${lines.length} frases${spent !== null ? ` · créditos premium ${r.creditsBefore} → ${r.creditsAfter} (gastó ${spent})` : ''}.`,
+      );
+      this.update(id, (x) => x.costs.push({ at: now(), step: 'voice', provider: 'heygen-voice', label: `Voz del narrador (HeyGen)${spent !== null ? ` · ${spent} créditos premium` : ''}` }));
+    });
+    if (stoppedAt) {
+      this.setStatus(id, 'voice', 'error', { error: `Límite de ${limit} crédito(s) premium de HeyGen: se detuvo antes de ${stoppedAt}. Sube el límite o genera las que faltan.` });
+      return;
+    }
+    const missing = this.narration(id).filter((l) => !l.file).length;
+    this.setStatus(id, 'voice', missing ? 'error' : 'review', missing ? { error: `${missing} frase(s) sin audio` } : {});
+  }
+
+  private async generateVoices(id: string, lineIds?: string[]): Promise<void> {
     const e = this.get(id);
     if (!e.voice) {
       this.setStatus(id, 'voice', 'error', { error: 'Elige una voz primero.' });
       return;
     }
-    const info = provider(e.voice.provider);
-    if (!info?.implemented) {
-      this.setStatus(id, 'voice', 'error', { error: `${info?.name ?? e.voice.provider} gasta créditos y todavía está bloqueado.` });
+    const blocked = providerBlock(e.voice.provider, loadSettings().allowPaidProviders, keys());
+    if (blocked) {
+      this.setStatus(id, 'voice', 'error', { error: blocked });
       return;
     }
-    const lines = this.narration(id);
+    if (e.voice.provider === 'heygen-voice') return this.generateHeygenVoices(id, lineIds);
+    const lines = this.narration(id).filter((l) => !lineIds?.length || lineIds.includes(l.id));
+    // ElevenLabs charges per character: the run never passes the episode's credit limit. Each line is
+    // checked before it is sent; the first one that would pass the limit stops the run (it and the
+    // ones after keep their previous take).
+    // The plan is made before anything is sent (in line order), so lines generated in parallel
+    // can never pass the limit. A failed call may still be charged: every sent line counts.
+    const paid = e.voice.provider === 'elevenlabs';
+    const limit = e.voiceCreditLimit ?? DEFAULT_VOICE_CREDIT_LIMIT;
+    const plan = paid ? planVoiceRun(lines.map((l) => l.text), limit) : { total: 0, allowed: 0, fits: lines.length };
+    const toSend = lines.slice(0, plan.fits);
+    const stoppedAt: string | null = plan.fits < lines.length ? lines[plan.fits].id : null;
     this.setStatus(id, 'voice', 'working', { error: undefined });
-    await this.queue.add(id, 'voice', 'render', `Voces (${lines.length})`, async (signal) => {
-      for (const l of lines) {
-        if (signal.aborted) break;
-        this.activity(id, 'voice', 'tool', `Genera ${l.id}`);
-        const res = await synthesize(e.voice!.provider, e.voice!.voiceId, l.text, path.join(e.dir, 'voces', `${l.id}.wav`));
-        if (!res.ok) this.activity(id, 'voice', 'error', `${l.id}: ${res.error}`);
+    const key = keys().elevenlabs;
+    const before = paid && key ? await elevenUsedCredits(key).catch(() => null) : null;
+    if (paid) {
+      this.activity(id, 'voice', 'info', `Límite de esta ejecución: ${limit.toLocaleString('es-PE')} créditos (estimado de todas las frases: ${plan.total.toLocaleString('es-PE')}).`);
+      if (stoppedAt) {
+        const cost = lineCredits(lines[plan.fits].text);
+        this.activity(id, 'voice', 'error', `Se detiene en ${stoppedAt}: costaría ${cost} créditos y llevaría la ejecución a ${plan.allowed + cost} de ${limit}. No se envía.`);
       }
-    });
+    }
+    // One queue job per line: the episode's voice limit decides how many go at the same time.
+    let spent = 0;
+    await Promise.all(
+      toSend.map((l) =>
+        this.queue.add(id, 'voice', 'voice', `Voz ${l.id}`, async (signal) => {
+          if (signal.aborted) return;
+          this.activity(id, 'voice', 'tool', `Genera ${l.id}${paid ? ` · ${lineCredits(l.text)} créditos` : ''}`);
+          // A new take replaces the old one in either format.
+          for (const ext of ['wav', 'mp3']) fs.rmSync(path.join(e.dir, 'voces', `${l.id}.${ext}`), { force: true });
+          if (paid) spent += lineCredits(l.text);
+          const res = await synthesize(e.voice!.provider, e.voice!.voiceId, l.text, path.join(e.dir, 'voces', `${l.id}.wav`), keys());
+          if (!res.ok) this.activity(id, 'voice', 'error', `${l.id}: ${res.error}`);
+        }),
+      ),
+    );
+    if (paid && spent) {
+      const after = key && before !== null ? await elevenUsedCredits(key).catch(() => null) : null;
+      const real = before !== null && after !== null ? after - before : null;
+      this.activity(id, 'voice', 'result', `Gastado en esta ejecución: ≈ ${spent.toLocaleString('es-PE')} créditos${real !== null ? ` (ElevenLabs registra ${real.toLocaleString('es-PE')})` : ''} de un límite de ${limit.toLocaleString('es-PE')}.`);
+      this.update(id, (x) => x.costs.push({ at: now(), step: 'voice', provider: 'elevenlabs', label: `Voz del narrador · ${real ?? spent} créditos` }));
+    }
     const missing = this.narration(id).filter((l) => !l.file).length;
+    if (stoppedAt) {
+      this.setStatus(id, 'voice', 'error', { error: `Límite de ${limit.toLocaleString('es-PE')} créditos: se detuvo en ${stoppedAt}. Sube el límite o genera de nuevo para completar.` });
+      return;
+    }
     this.setStatus(id, 'voice', missing ? 'error' : 'review', missing ? { error: `${missing} frase(s) sin audio` } : {});
   }
 }

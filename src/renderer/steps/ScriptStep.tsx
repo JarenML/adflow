@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, CircleAlert, CircleCheck, Clock, FileText, Mic, RefreshCw, Sparkles, Type, Wand2 } from 'lucide-react';
+import { ArrowRight, CircleAlert, CircleCheck, Clapperboard, Clock, FileText, Mic, RefreshCw, Sparkles, Type, Wand2 } from 'lucide-react';
 import type { EpisodeState } from '@shared/types';
-import { sceneDuration, sceneKind, sceneNarration, screenTexts, type Scene, type SceneKind } from '@shared/schemas';
+import { isClipScene, sceneDuration, sceneKind, sceneNarration, screenTexts, type Scene, type SceneKind } from '@shared/schemas';
 import { api, useLive } from '../lib/api';
 import { Button, Card, cx, Empty, SectionTitle, Tag } from '../components/ui';
 
@@ -69,6 +69,14 @@ function SceneCard({ s, i }: { s: Scene; i: number }) {
       <div className="flex flex-col items-start gap-2">
         <span className="font-mono text-[13px] font-semibold text-ink">{s.id}</span>
         <Tag tone={KIND_STYLE[k].tag}>{KIND_STYLE[k].label}</Tag>
+        {/* Decided here, in the script: Videos generates exactly these scenes. */}
+        {isClipScene(s) && (
+          <span title="Escena con clip de video de IA (se genera en el paso Videos)">
+            <Tag tone="warn">
+              <Clapperboard className="size-3" /> Clip
+            </Tag>
+          </span>
+        )}
         <span className="flex items-center gap-1 font-mono text-[11px] text-faint">
           <Clock className="size-3" />
           {typeof s.inicio === 'number' ? `${s.inicio.toFixed(1)}–${(s.fin ?? 0).toFixed(1)}` : fmt(sceneDuration(s))}
@@ -172,6 +180,18 @@ export function ScriptStep({ episode }: { episode: EpisodeState }) {
           </div>
         </div>
         <DurationBar scenes={script.escenas} />
+        {(() => {
+          // The clips are decided here: Videos generates exactly these scenes.
+          const clipIds = script.escenas.filter(isClipScene).map((s) => s.id);
+          return (
+            <p className="mt-3 flex items-center gap-1.5 text-[12.5px] text-mute">
+              <Clapperboard className="size-3.5 text-warn" />
+              {clipIds.length
+                ? `Clips de video: ${clipIds.join(', ')} (${clipIds.length} · ≈ ${(clipIds.length * 3640).toLocaleString('es-PE')} créditos de ElevenLabs a 4 s). El resto de escenas reales van como imagen con movimiento.`
+                : 'Sin clips de video: todas las escenas reales van como imagen con movimiento.'}
+            </p>
+          );
+        })()}
         <div className="mt-4 flex flex-wrap gap-1.5">
           {checks.map((c) => (
             <span

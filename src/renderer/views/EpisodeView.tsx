@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronLeft, FolderOpen } from 'lucide-react';
+import { ChevronLeft, FolderOpen, PanelRightOpen } from 'lucide-react';
 import type { StepId } from '@shared/types';
 import { STEPS } from '@shared/types';
 import { api, useEpisode } from '../lib/api';
@@ -16,8 +16,52 @@ import { RenderStep } from '../steps/RenderStep';
 import { PublishStep } from '../steps/PublishStep';
 import { toTeamStatus } from '@shared/progress';
 
+const CHAT_DEFAULT = 360;
+const CHAT_MIN = 260;
+const CHAT_MAX = 640;
+const CHAT_KEY = 'adflow.chatPanel';
+
+/** Width and collapsed state of Claude's panel, remembered on this computer. */
+function useChatPanel() {
+  const saved = (() => {
+    try {
+      return JSON.parse(localStorage.getItem(CHAT_KEY) ?? '{}') as { width?: number; collapsed?: boolean };
+    } catch {
+      return {};
+    }
+  })();
+  const [width, setWidthState] = useState(Math.min(CHAT_MAX, Math.max(CHAT_MIN, saved.width ?? CHAT_DEFAULT)));
+  const [collapsed, setCollapsed] = useState(!!saved.collapsed);
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHAT_KEY, JSON.stringify({ width, collapsed }));
+    } catch {
+      /* storage unavailable: just don't remember it */
+    }
+  }, [width, collapsed]);
+  const setWidth = (w: number) => setWidthState(Math.min(CHAT_MAX, Math.max(CHAT_MIN, Math.round(w))));
+  const startDrag = (e: ReactPointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = width;
+    const move = (ev: PointerEvent) => setWidth(startW + (startX - ev.clientX));
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return { width, setWidth, collapsed, setCollapsed, startDrag };
+}
+
 export function EpisodeView({ id, initialStep, onBack }: { id: string; initialStep?: StepId; onBack: () => void }) {
   const episode = useEpisode(id);
+  const chat = useChatPanel();
   const [selected, setSelected] = useState<StepId | null>(initialStep ?? null);
   const [target, setTarget] = useState<ChatTarget>();
 
@@ -93,9 +137,29 @@ export function EpisodeView({ id, initialStep, onBack }: { id: string; initialSt
             </AnimatePresence>
           </div>
         </main>
-        <aside className="w-[360px] shrink-0 border-l border-line bg-panel/60">
-          <BrainPanel episode={episode} step={step} target={target} onClearTarget={() => setTarget(undefined)} />
-        </aside>
+        {chat.collapsed ? (
+          <aside className="flex w-11 shrink-0 flex-col items-center border-l border-line bg-panel/60 pt-3">
+            <button className="no-drag grid size-8 place-items-center rounded-lg text-mute hover:bg-panel-2 hover:text-ink" title="Mostrar el panel de Claude" onClick={() => chat.setCollapsed(false)}>
+              <PanelRightOpen className="size-4" />
+            </button>
+            <span className="mt-3 text-[11px] text-faint [writing-mode:vertical-rl]">Claude</span>
+          </aside>
+        ) : (
+          <aside className="relative shrink-0 border-l border-line bg-panel/60" style={{ width: chat.width }}>
+            {/* Drag to resize; double click goes back to the default width. */}
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              title="Arrastra para cambiar el ancho · doble clic: ancho normal"
+              className="no-drag group absolute inset-y-0 -left-1.5 z-10 w-3 cursor-col-resize"
+              onPointerDown={chat.startDrag}
+              onDoubleClick={() => chat.setWidth(CHAT_DEFAULT)}
+            >
+              <div className="mx-auto h-full w-px bg-transparent transition-colors group-hover:bg-brand/60" />
+            </div>
+            <BrainPanel episode={episode} step={step} target={target} onClearTarget={() => setTarget(undefined)} onCollapse={() => chat.setCollapsed(true)} />
+          </aside>
+        )}
       </div>
     </div>
   );

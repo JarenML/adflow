@@ -67,7 +67,7 @@ export function defaultSettings(): Settings {
       defaultAccount: 'system',
     },
     defaults: { brain: 'claude-cli', image: 'codex-cli', video: 'manual', voice: 'windows-sapi', music: 'none' },
-    concurrency: { brain: 2, image: 2, render: 1 },
+    concurrency: { image: 2, clip: 2, voice: 2, episodes: 3 },
     allowPaidProviders: false,
     userName: '',
     storageDir: '',
@@ -84,7 +84,13 @@ export function loadSettings(): Settings {
     ...saved,
     claude: { ...base.claude, ...saved.claude },
     defaults: { ...base.defaults, ...saved.defaults },
-    concurrency: { ...base.concurrency, ...saved.concurrency },
+    // Older settings also had brain and render (now fixed): only the configurable ones are kept.
+    concurrency: {
+      image: saved.concurrency?.image ?? base.concurrency.image,
+      clip: saved.concurrency?.clip ?? base.concurrency.clip,
+      voice: saved.concurrency?.voice ?? base.concurrency.voice,
+      episodes: saved.concurrency?.episodes ?? base.concurrency.episodes,
+    },
     team: { ...base.team, ...saved.team },
     playbooks: saved.playbooks?.length ? saved.playbooks : base.playbooks,
   };

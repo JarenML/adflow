@@ -396,20 +396,46 @@ export function SettingsView() {
 
         {tab === 'queue' && (
           <Card className="p-5">
-            <SectionTitle title="Trabajo en paralelo" hint="Cuántas tareas corren a la vez. Más sesiones de Claude gastan el límite de la suscripción más rápido." />
-            <div className="grid grid-cols-3 gap-4">
+            <SectionTitle
+              title="Trabajo en paralelo"
+              hint="Cuántos episodios trabajan a la vez y, dentro de cada uno, cuántos ítems de cada paso se generan a la vez (una imagen, un clip o una frase de voz es un ítem)."
+            />
+            <div className="mb-5 max-w-[260px]">
+              <Field label="Episodios a la vez" hint="En cualquier paso. Uno que espera tu aprobación no ocupa lugar.">
+                <Select
+                  value={String(s.concurrency.episodes)}
+                  onChange={(v) => save({ ...s, concurrency: { ...s.concurrency, episodes: Number(v) } })}
+                  options={[...[1, 2, 3, 4, 5, 6, 8, 10].map((n) => ({ value: String(n), label: String(n) })), { value: '0', label: 'Sin límite' }]}
+                />
+              </Field>
+            </div>
+            <div className="grid grid-cols-5 gap-4">
+              <Field label="Guion y Claude" hint="1 por episodio (fijo)">
+                <Select value="1" onChange={() => {}} options={[{ value: '1', label: '1' }]} disabled />
+              </Field>
               {(
                 [
-                  ['brain', 'Sesiones de Claude'],
-                  ['image', 'Imágenes a la vez'],
-                  ['render', 'Voz y render'],
+                  ['image', 'Imágenes', 'Por episodio'],
+                  ['clip', 'Clips de video', 'Por episodio'],
+                  ['voice', 'Voces (frases)', 'Por episodio'],
                 ] as const
-              ).map(([k, label]) => (
-                <Field key={k} label={label}>
-                  <Select value={String(s.concurrency[k])} onChange={(v) => save({ ...s, concurrency: { ...s.concurrency, [k]: Number(v) } })} options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: String(n) }))} />
+              ).map(([k, label, hint]) => (
+                <Field key={k} label={label} hint={hint}>
+                  <Select
+                    value={String(s.concurrency[k])}
+                    onChange={(v) => save({ ...s, concurrency: { ...s.concurrency, [k]: Number(v) } })}
+                    options={[...[1, 2, 3, 4, 6, 8, 10].map((n) => ({ value: String(n), label: String(n) })), { value: '0', label: 'Todos a la vez' }]}
+                  />
                 </Field>
               ))}
+              <Field label="Render" hint="1 en total (fijo)">
+                <Select value="1" onChange={() => {}} options={[{ value: '1', label: '1' }]} disabled />
+              </Field>
             </div>
+            <p className="mt-3 text-[12px] text-faint">
+              El render es uno a la vez en toda la computadora: cada render ya usa casi toda la CPU. Con voces de HeyGen, una sola sesión de Claude genera todas las frases del
+              episodio (cuenta como un ítem). Más ítems a la vez no gastan más en total, pero llegan antes al límite de uso de Codex, ElevenLabs o Claude.
+            </p>
             <Field label="Tu nombre (para el seguimiento del equipo)">
               <input className={cx(inputCls, 'mt-4')} value={s.userName} onChange={(e) => save({ ...s, userName: e.target.value })} />
             </Field>

@@ -48,12 +48,14 @@ export function Card({ children, className }: { children: ReactNode; className?:
 
 export function SectionTitle({ title, hint, right }: { title: string; hint?: string; right?: ReactNode }) {
   return (
-    <div className="mb-4 flex items-end justify-between gap-4">
-      <div>
+    // The title keeps a readable width: when the actions on the right don't fit beside it, they wrap
+    // below instead of squeezing the text into a narrow column.
+    <div className="mb-4 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+      <div className="min-w-[260px] flex-1">
         <h3 className="text-[15px] font-semibold text-ink">{title}</h3>
-        {hint && <p className="mt-0.5 text-[13px] text-mute">{hint}</p>}
+        {hint && <p className="mt-0.5 text-[13px] leading-relaxed text-mute">{hint}</p>}
       </div>
-      {right}
+      {right && <div className="flex shrink-0 flex-wrap items-center gap-2">{right}</div>}
     </div>
   );
 }

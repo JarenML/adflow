@@ -106,6 +106,10 @@ export interface EpisodeState {
   providers: Record<Capability, string>;
   brain: { account: string; model: string; sessions: Partial<Record<StepId, string>> };
   voice?: VoiceChoice;
+  /** Max ElevenLabs credits one narrator run may spend (it stops before passing it). */
+  voiceCreditLimit?: number;
+  /** Max HeyGen premium credits one narrator run may spend (worst case of its characters). */
+  heygenCreditLimit?: number;
   closingVoice: 'narrator' | 'template';
   videoConfig?: VideoClipConfig;
   costs: CostEntry[];
@@ -182,7 +186,7 @@ export interface Settings {
   team: { url: string; userName?: string };
   claude: { model: string; effort: 'low' | 'medium' | 'high'; accounts: ClaudeAccount[]; defaultAccount: string };
   defaults: Record<Capability, string>;
-  concurrency: { brain: number; image: number; render: number };
+  concurrency: ConcurrencySettings;
   /** Paid providers stay blocked until this is on (and each spend is still confirmed). */
   allowPaidProviders: boolean;
   userName: string;
@@ -217,9 +221,29 @@ export interface DiagnosticItem {
   required: boolean;
 }
 
+/**
+ * Kinds of work in the queue. brain: one Claude task (script, prompts, ad copy, assembling the
+ * render). image: one image. clip: one video clip. voice: one batch of voices. render: one render phase.
+ */
+export type Lane = 'brain' | 'image' | 'clip' | 'voice' | 'render';
+
+/**
+ * How many images, clips and voice lines run at the same time in each episode (0 = all at once),
+ * and how many episodes work at the same time whatever their step (0 = no limit).
+ * Claude tasks are fixed at 1 per episode; render at 1 for the whole computer.
+ */
+export interface ConcurrencySettings {
+  image: number;
+  clip: number;
+  voice: number;
+  episodes: number;
+}
+
 export interface QueueSnapshot {
-  lanes: Record<'brain' | 'image' | 'render', { running: number; waiting: number; limit: number }>;
-  jobs: { id: string; episodeId: string; step: StepId; label: string; lane: string; state: 'waiting' | 'running' }[];
+  lanes: Record<Lane, { running: number; waiting: number; limit: number; scope: 'episode' | 'global' }>;
+  /** Episodes working now (a job running) and the limit (0 = no limit). */
+  episodes: { active: number; limit: number };
+  jobs: { id: string; episodeId: string; step: StepId; label: string; lane: Lane; state: 'waiting' | 'running' }[];
 }
 
 export interface ImageItem {
@@ -233,6 +257,16 @@ export interface ImageItem {
   error?: string;
   description?: string;
   narration?: string;
+  /** The script made this scene a video clip: the image is its first frame. */
+  clip?: boolean;
+}
+
+/** A real scene of the script that stays as an image (it could become a clip). */
+export interface ClipCandidate {
+  sceneId: string;
+  image: string;
+  imageUrl?: string;
+  description?: string;
 }
 
 export interface ClipItem {
@@ -246,6 +280,11 @@ export interface ClipItem {
   file: string;
   exists: boolean;
   url?: string;
+  /** Generation state of this clip (pending until generated or uploaded). */
+  status: 'pending' | 'working' | 'done' | 'error';
+  error?: string;
+  /** The ElevenLabs flow where it was generated (MCP), to keep editing it there. */
+  flowUrl?: string;
 }
 
 export interface NarrationLine {
@@ -265,6 +304,8 @@ export interface VoiceOption {
   language: string;
   gender?: string;
   description?: string;
+  /** A sample recorded by the provider (ElevenLabs preview_url): listening to it is free. */
+  previewUrl?: string;
 }
 
 /** Actions the renderer can ask the pipeline to run. */
@@ -278,8 +319,16 @@ export type PipelineAction =
   | { step: 'videos'; type: 'prepare' }
   | { step: 'videos'; type: 'feedback'; sceneId?: string; message: string }
   | { step: 'videos'; type: 'import'; sceneId: string }
+  | { step: 'videos'; type: 'generate'; sceneIds?: string[] }
+  /** Turn a scene of the script into a clip (tipo real_clip) and write its prompt. */
+  | { step: 'videos'; type: 'addClip'; sceneId: string }
+  /** Turn a clip scene back into an image (tipo real_imagen). */
+  | { step: 'videos'; type: 'removeClip'; sceneId: string }
   | { step: 'voice'; type: 'preview'; text: string }
-  | { step: 'voice'; type: 'generate' }
+  | { step: 'voice'; type: 'generate'; lineIds?: string[] }
+  | { step: 'render'; type: 'build' }
+  | { step: 'render'; type: 'feedback'; message: string }
+  | { step: 'render'; type: 'rerender' }
   | { step: 'publish'; type: 'adCopy' }
   | { step: 'publish'; type: 'feedback'; message: string }
   | { step: 'publish'; type: 'markPublished'; publication: Publication }
@@ -287,3 +336,13 @@ export type PipelineAction =
   | { step: StepId; type: 'approve' }
   | { step: StepId; type: 'reopen' }
   | { step: StepId; type: 'cancel' };
+
+/** The last final render of an episode (.adflow/render.json). */
+export interface RenderReport {
+  at: string;
+  file: string;
+  durationS: number | null;
+  sizeMB: number;
+  mastered: boolean;
+  note?: string;
+}

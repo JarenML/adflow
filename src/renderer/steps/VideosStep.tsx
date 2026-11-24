@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, Clapperboard, Lock, MessageSquare, Upload, Volume2, VolumeX, Wand2 } from 'lucide-react';
-import type { EpisodeState, ProviderInfo, Settings, VideoClipConfig } from '@shared/types';
+import { ArrowRight, Clapperboard, ExternalLink, ImageIcon, Loader2, Lock, MessageSquare, Plus, Upload, Volume2, VolumeX, Wand2 } from 'lucide-react';
+import type { ClipCandidate, EpisodeState, ProviderInfo, Settings, VideoClipConfig } from '@shared/types';
 import { api, useLive } from '../lib/api';
 import type { ChatTarget } from '../components/BrainPanel';
 import { Button, Card, cx, Empty, Field, SectionTitle, Select, Tag } from '../components/ui';
@@ -10,6 +10,7 @@ const DEFAULT_CFG: VideoClipConfig = { provider: 'manual', model: 'veo-3.1-fast'
 
 export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTarget: (t: ChatTarget) => void }) {
   const [clips] = useLive(() => api.clips(episode.id), [episode.id], episode.id);
+  const [candidates] = useLive<ClipCandidate[]>(() => api.clipCandidates(episode.id), [episode.id], episode.id);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [settings, setSettings] = useState<Settings>();
   const [estimate, setEstimate] = useState('');
@@ -34,7 +35,7 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
 
   const config = (
     <Card className="p-5">
-      <SectionTitle title="Configuración de los clips" hint="Nada se genera hasta que lo confirmes. Los proveedores con créditos siguen bloqueados." right={prov && billingTag(prov, !!settings?.allowPaidProviders)} />
+      <SectionTitle title="Configuración de los clips" hint={prov?.billing === 'credits' && !settings?.allowPaidProviders ? 'Este proveedor gasta créditos: actívalo en Ajustes → Proveedores para generar desde aquí.' : 'Nada se genera hasta que presiones Generar.'} right={prov && billingTag(prov, !!settings?.allowPaidProviders)} />
       <div className="grid grid-cols-[1.7fr_1fr_0.8fr_1fr] gap-4">
         <Field label="Generar con">
           <Select
@@ -44,7 +45,7 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
           />
         </Field>
         <Field label="Modelo">
-          <Select value={cfg.model} onChange={(v) => setCfg({ model: v })} options={[{ value: 'veo-3.1-fast', label: 'Veo 3.1 Fast' }, { value: 'veo-3.1', label: 'Veo 3.1' }]} />
+          <Select value="veo-3.1-fast" onChange={(v) => setCfg({ model: v })} options={[{ value: 'veo-3.1-fast', label: 'Veo 3.1 Fast' }]} />
         </Field>
         <Field label="Duración por clip">
           <Select value={String(cfg.durationS)} onChange={(v) => setCfg({ durationS: Number(v) })} options={[4, 6, 8].map((d) => ({ value: String(d), label: `${d} s` }))} />
@@ -62,24 +63,90 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
     </Card>
   );
 
+  // Real scenes the script left as an image: one click turns them into a clip (and back, on each row).
+  const others = candidates ?? [];
+  const busy = st === 'working';
+  const otherImages = others.length > 0 && (
+    <Card className="p-5">
+      <SectionTitle
+        title="Imágenes sin clip"
+        hint="El guion las dejó como imagen con movimiento (acercamiento en el montaje). Si una necesita video real, conviértela en clip: Claude escribe su prompt y se cambia en el guion."
+      />
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3">
+        {others.map((o) => (
+          <div key={o.sceneId} className="overflow-hidden rounded-xl border border-line bg-panel-2/40">
+            <div className="relative aspect-[9/16] w-full bg-[#0a0c11]">
+              {o.imageUrl ? <img src={o.imageUrl} className="absolute inset-0 size-full object-cover" alt="" /> : <ImageIcon className="absolute inset-0 m-auto size-5 text-faint" />}
+              <span className="absolute left-2 top-2 rounded-md bg-black/60 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-white">{o.sceneId}</span>
+            </div>
+            <div className="p-2">
+              <Button
+                size="sm"
+                className="w-full"
+                disabled={busy || st === 'approved'}
+                icon={<Plus className="size-3.5" />}
+                title={o.description}
+                onClick={() => {
+                  if (window.confirm(`¿Convertir ${o.sceneId} en clip de video? Se cambia en el guion y Claude escribe su prompt. Generarlo gasta créditos.`)) void api.act(episode.id, { step: 'videos', type: 'addClip', sceneId: o.sceneId });
+                }}
+              >
+                Convertir en clip
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+
+  // The script has no clip scenes: nothing to generate, the step can be approved as is.
+  if (!list.length && (st === 'review' || st === 'approved')) {
+    return (
+      <div className="space-y-5">
+        {config}
+        <Card className="p-5">
+          <SectionTitle
+            title="Este guion no lleva clips de video"
+            hint="Todas las escenas reales van como imagen con movimiento en el montaje. Si alguna necesita video, conviértela abajo."
+            right={
+              <Button size="sm" variant="primary" icon={<ArrowRight className="size-3.5" />} disabled={st === 'approved'} onClick={() => api.act(episode.id, { step: 'videos', type: 'approve' })}>
+                {st === 'approved' ? 'Aprobado' : 'Aprobar y seguir'}
+              </Button>
+            }
+          />
+        </Card>
+        {otherImages}
+      </div>
+    );
+  }
+
   if (!list.length) {
     return (
       <div className="space-y-5">
         {config}
         {st === 'working' ? (
-          <div className="grid grid-cols-3 gap-4">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="shimmer h-72 rounded-2xl" />
-            ))}
-          </div>
+          <Card className="p-5">
+            <SectionTitle title="Claude escribe los prompts de los clips del guion" hint="Las escenas que el guion marcó como clip (el gancho y los diálogos). Aparecen aquí en un momento." />
+            <div className="space-y-4">
+              {[0, 1].map((i) => (
+                <div key={i} className="grid grid-cols-[150px_150px_1fr] gap-4">
+                  <div className="shimmer aspect-[9/16] rounded-xl" />
+                  <div className="shimmer aspect-[9/16] rounded-xl" />
+                  <div className="shimmer h-40 rounded-xl" />
+                </div>
+              ))}
+            </div>
+          </Card>
         ) : (
+          // The choice runs by itself when Imágenes is approved; this only shows when it failed (or
+          // for episodes approved before that existed).
           <Empty
             icon={<Clapperboard className="size-5" />}
-            title="Claude elige las 2–3 escenas que necesitan movimiento real"
-            hint={episode.steps.videos.error ?? 'El gancho y los diálogos. Escribe sus prompts con las reglas fijas de clips del playbook.'}
+            title={episode.steps.videos.error ? 'No se pudieron preparar los clips' : 'Faltan los prompts de los clips del guion'}
+            hint={episode.steps.videos.error ?? 'Se preparan solos al aprobar Imágenes: las escenas que el guion marcó como clip, con su prompt.'}
             action={
               <Button variant="primary" icon={<Wand2 className="size-4" />} onClick={() => api.act(episode.id, { step: 'videos', type: 'prepare' })}>
-                Elegir escenas y escribir prompts
+                {episode.steps.videos.error ? 'Reintentar' : 'Preparar ahora'}
               </Button>
             }
           />
@@ -94,51 +161,97 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
       {config}
       <Card className="p-5">
         <SectionTitle
-          title={`${ready} de ${list.length} clips listos`}
-          hint={canGenerate ? 'Genera cada clip o súbelo si lo hiciste fuera.' : 'Genera los clips en tu herramienta (prompts en prompts_firefly.md) y súbelos aquí.'}
+          title={`${ready} de ${list.length} clip${list.length === 1 ? '' : 's'} listo${list.length === 1 ? '' : 's'}`}
+          hint={`Las escenas que el guion marcó como clip. ${canGenerate ? 'Genera cada una o súbela si la hiciste fuera.' : 'Genera los clips en tu herramienta (prompts en prompts_firefly.md) y súbelos aquí.'}`}
           right={
-            <Button size="sm" variant="primary" icon={<ArrowRight className="size-3.5" />} disabled={st === 'working' || st === 'approved'} onClick={() => api.act(episode.id, { step: 'videos', type: 'approve' })}>
-              {st === 'approved' ? 'Aprobado' : 'Aprobar y seguir'}
-            </Button>
+            <div className="flex gap-2">
+              {canGenerate && (
+                <Button size="sm" icon={<Wand2 className="size-3.5" />} loading={st === 'working'} disabled={st === 'approved'} onClick={() => api.act(episode.id, { step: 'videos', type: 'generate', sceneIds: list.filter((c) => !c.exists).map((c) => c.sceneId) })}>
+                  Generar los que faltan
+                </Button>
+              )}
+              <Button size="sm" variant="primary" icon={<ArrowRight className="size-3.5" />} disabled={st === 'working' || st === 'approved'} onClick={() => api.act(episode.id, { step: 'videos', type: 'approve' })}>
+                {st === 'approved' ? 'Aprobado' : 'Aprobar y seguir'}
+              </Button>
+            </div>
           }
         />
-        <div className="grid grid-cols-3 gap-4">
+        <div className="space-y-4">
           {list.map((c) => (
-            <div key={c.sceneId} className="overflow-hidden rounded-2xl border border-line bg-panel-2/40">
-              <div className="relative aspect-[9/16] max-h-[420px] w-full bg-[#0a0c11]">
-                {c.url ? (
-                  <video src={c.url} className="absolute inset-0 size-full object-cover" controls muted loop />
-                ) : c.imageUrl ? (
-                  <>
-                    <img src={c.imageUrl} className="absolute inset-0 size-full object-cover opacity-50" alt="" />
-                    <div className="absolute inset-0 grid place-items-center">
-                      <span className="rounded-full bg-black/60 px-3 py-1 text-[11px] text-mute">Primer fotograma</span>
+            <div key={c.sceneId} className="grid grid-cols-[150px_150px_1fr] gap-4 rounded-2xl border border-line bg-panel-2/40 p-3">
+              {/* The scene image (first frame) */}
+              <div>
+                <p className="mb-1.5 text-[11px] text-faint">Imagen · primer fotograma</p>
+                <div className="relative aspect-[9/16] w-full overflow-hidden rounded-xl bg-[#0a0c11]">
+                  {c.imageUrl ? <img src={c.imageUrl} className="absolute inset-0 size-full object-cover" alt="" /> : <span className="absolute inset-0 grid place-items-center text-[11px] text-faint">Sin imagen</span>}
+                </div>
+              </div>
+              {/* Its clip */}
+              <div>
+                <p className="mb-1.5 text-[11px] text-faint">Clip</p>
+                <div className="relative aspect-[9/16] w-full overflow-hidden rounded-xl bg-[#0a0c11]">
+                  {c.status === 'working' ? (
+                    <div className="shimmer absolute inset-0 grid place-items-center">
+                      <span className="flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-mute">
+                        <Loader2 className="size-3 animate-spin" /> Generando…
+                      </span>
                     </div>
-                  </>
-                ) : null}
-                <div className="absolute left-2.5 top-2.5 flex gap-1.5">
+                  ) : c.url ? (
+                    <video src={c.url} className="absolute inset-0 size-full object-cover" controls loop />
+                  ) : (
+                    <span className="absolute inset-0 grid place-items-center px-3 text-center text-[11px] text-faint">{c.status === 'error' ? 'No se generó' : 'Sin generar'}</span>
+                  )}
+                </div>
+              </div>
+              {/* Prompt and actions */}
+              <div className="flex min-w-0 flex-col">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <span className="rounded-md bg-black/50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-white">{c.sceneId}</span>
                   <Tag tone={c.audio ? 'cyan' : 'default'}>
                     {c.audio ? <Volume2 className="size-3" /> : <VolumeX className="size-3" />}
                     {c.audio ? 'Con diálogo' : 'Sin audio'}
                   </Tag>
+                  <Tag>{c.durationS} s</Tag>
+                  {c.status === 'done' && <Tag tone="ok">Listo</Tag>}
+                  {c.status === 'error' && <Tag tone="bad">Error</Tag>}
                 </div>
-              </div>
-              <div className="space-y-2 p-3">
-                <p className="text-[12px] text-mute">{c.reason}</p>
-                <details className="text-[11px]">
-                  <summary className="no-drag cursor-pointer text-faint hover:text-ink">Ver prompt</summary>
-                  <p className="selectable mt-1.5 max-h-40 overflow-auto rounded-lg bg-[#0a0c11] p-2.5 font-mono text-[10.5px] leading-relaxed text-mute">{c.prompt}</p>
-                </details>
-                <div className="flex flex-wrap gap-1.5">
-                  <Button size="sm" disabled={!canGenerate} icon={canGenerate ? <Wand2 className="size-3.5" /> : <Lock className="size-3.5" />} title={canGenerate ? '' : 'Proveedor bloqueado o manual'}>
-                    Generar
+                <p className="mt-2 text-[12px] text-mute">{c.reason}</p>
+                <p className="mb-1 mt-2.5 text-[11px] text-faint">Prompt</p>
+                <p className="selectable max-h-48 flex-1 overflow-auto whitespace-pre-wrap rounded-lg bg-[#0a0c11] p-2.5 font-mono text-[10.5px] leading-relaxed text-mute">{c.prompt}</p>
+                {c.status === 'error' && c.error && <p className="selectable mt-2 text-[11.5px] text-bad">{c.error}</p>}
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  <Button
+                    size="sm"
+                    disabled={!canGenerate || c.status === 'working'}
+                    loading={c.status === 'working'}
+                    icon={canGenerate ? <Wand2 className="size-3.5" /> : <Lock className="size-3.5" />}
+                    title={canGenerate ? '' : 'Proveedor bloqueado o manual'}
+                    onClick={() => api.act(episode.id, { step: 'videos', type: 'generate', sceneIds: [c.sceneId] })}
+                  >
+                    {c.exists ? 'Regenerar' : 'Generar'}
                   </Button>
                   <Button size="sm" icon={<Upload className="size-3.5" />} onClick={() => api.act(episode.id, { step: 'videos', type: 'import', sceneId: c.sceneId })}>
                     {c.exists ? 'Reemplazar' : 'Subir clip'}
                   </Button>
                   <Button size="sm" variant="ghost" icon={<MessageSquare className="size-3.5" />} onClick={() => onTarget({ sceneId: c.sceneId, label: `clip ${c.sceneId}` })}>
-                    Corregir
+                    Corregir prompt
+                  </Button>
+                  {c.flowUrl && (
+                    <Button size="sm" variant="ghost" icon={<ExternalLink className="size-3.5" />} onClick={() => api.openPath(c.flowUrl!)}>
+                      Abrir en ElevenLabs
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={<ImageIcon className="size-3.5" />}
+                    disabled={c.status === 'working' || busy || st === 'approved'}
+                    title="La escena vuelve a ser imagen con movimiento (se cambia en el guion)"
+                    onClick={() => {
+                      if (window.confirm(`¿Quitar el clip de ${c.sceneId}? La escena vuelve a ser imagen con movimiento en el guion.`)) void api.act(episode.id, { step: 'videos', type: 'removeClip', sceneId: c.sceneId });
+                    }}
+                  >
+                    Quitar clip
                   </Button>
                 </div>
               </div>
@@ -146,7 +259,9 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
           ))}
         </div>
       </Card>
+      {otherImages}
       <p className={cx('text-[11.5px] text-faint')}>
+        {episode.steps.videos.error && <span className="mr-2 text-bad">{episode.steps.videos.error}.</span>}
         La verificación automática de clips (hoja de cuadros y transcripción) llega en la siguiente fase.
       </p>
     </div>

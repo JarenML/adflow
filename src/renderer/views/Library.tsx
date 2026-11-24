@@ -8,6 +8,11 @@ import { TEAM_STATUSES, TEAM_STATUS_LABEL } from '@shared/progress';
 import { api } from '../lib/api';
 import { Button, cx, Empty, inputCls, Tag, TeamStatusPill } from '../components/ui';
 
+/** Groups spellings of the same business type ("Clínicas…" / "clinicas…  "). */
+function businessKey(b?: string): string {
+  return (b ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
 const TAB_LABEL: Record<TeamStatus, string> = {
   pendiente: 'Pendientes',
   en_produccion: 'En producción',
@@ -41,6 +46,8 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
   }, [reload]);
   const [tab, setTab] = useState<TeamStatus>('pendiente');
   const [query, setQuery] = useState('');
+  /** Normalized business type to filter by ('' = all). */
+  const [business, setBusiness] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -51,13 +58,30 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
   const takenByOther = (i: LibraryItem) => !i.episodeId && !!i.assignee && !!me && i.assignee !== me;
   const clean = (err: unknown) => String((err as Error)?.message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
   const list = items ?? [];
-  const counts = useMemo(() => Object.fromEntries(TEAM_STATUSES.map((s) => [s, list.filter((i) => i.status === s).length])) as Record<TeamStatus, number>, [list]);
+  /** Business types present in the current tab (with how many episodes each), A→Z. */
+  const businesses = useMemo(() => {
+    const byKey = new Map<string, { label: string; count: number }>();
+    for (const i of list) {
+      if (i.status !== tab) continue;
+      const key = businessKey(i.businessType);
+      if (!key) continue;
+      const b = byKey.get(key);
+      if (b) b.count++;
+      else byKey.set(key, { label: i.businessType.trim(), count: 1 });
+    }
+    return [...byKey.entries()].map(([key, b]) => ({ key, ...b })).sort((a, b) => a.label.localeCompare(b.label, 'es'));
+  }, [list, tab]);
+  const inBusiness = useCallback((i: LibraryItem) => !business || businessKey(i.businessType) === business, [business]);
+  const counts = useMemo(
+    () => Object.fromEntries(TEAM_STATUSES.map((s) => [s, list.filter((i) => i.status === s && inBusiness(i)).length])) as Record<TeamStatus, number>,
+    [list, inBusiness],
+  );
   const shown = useMemo(
     () =>
       list
-        .filter((i) => i.status === tab)
+        .filter((i) => i.status === tab && inBusiness(i))
         .filter((i) => !query || `${i.title} ${i.businessType} ${i.solution} ${i.summary}`.toLowerCase().includes(query.toLowerCase())),
-    [list, tab, query],
+    [list, tab, query, inBusiness],
   );
 
   const open = async (i: LibraryItem) => {
@@ -122,6 +146,28 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
         </div>
       </div>
 
+      {(businesses.length > 1 || business) && (
+        <div className="mb-4 flex flex-wrap items-center gap-1.5 text-[12px]">
+          <span className="mr-1 text-faint">Negocio</span>
+          {[{ key: '', label: 'Todos', count: undefined as number | undefined }, ...businesses].map((b) => (
+            <button
+              key={b.key || 'all'}
+              className={cx(
+                'no-drag rounded-md border px-2 py-1 font-medium transition-colors',
+                business === b.key ? 'border-brand-2/40 bg-brand-2/10 text-brand-2' : 'border-line-2 text-mute hover:text-ink',
+              )}
+              onClick={() => setBusiness(b.key)}
+            >
+              {b.label}
+              {b.count !== undefined && <span className="ml-1 text-faint">{b.count}</span>}
+            </button>
+          ))}
+          {business && !businesses.some((b) => b.key === business) && (
+            <span className="text-faint">· el negocio elegido no tiene episodios en esta pestaña</span>
+          )}
+        </div>
+      )}
+
       {loadError && <div className="selectable mb-4 rounded-xl border border-warn/30 bg-warn/5 px-4 py-3 text-[12.5px] text-warn">No se pudo cargar la fuente de episodios: {loadError}</div>}
       {error && <div className="selectable mb-4 rounded-xl border border-bad/30 bg-bad/5 px-4 py-3 text-[12.5px] text-bad">{error}</div>}
 
@@ -158,12 +204,15 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="truncate text-[14px] font-semibold">«{i.title}»</p>
                     <TeamStatusPill progress={i.progress} status={i.status} extra={!i.progress && i.status === 'en_produccion' ? i.stepLabel : undefined} />
+                    {i.businessType && (
+                      <button className="no-drag" title="Filtrar por este negocio" onClick={() => setBusiness(businessKey(i.businessType))}>
+                        <Tag tone="cyan">{i.businessType}</Tag>
+                      </button>
+                    )}
                     {i.assignee && <Tag>{i.assignee}</Tag>}
                     {i.publication && <Tag tone="ok">{[i.publication.network, i.publication.date].filter(Boolean).join(' · ')}</Tag>}
                   </div>
-                  <p className="text-[12px] text-faint">
-                    {i.businessType} · {i.solution}
-                  </p>
+                  {i.solution && <p className="text-[12px] text-faint">{i.solution}</p>}
                   {i.summary && <p className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-mute">{i.summary}</p>}
                 </div>
                 {takenByOther(i) ? (

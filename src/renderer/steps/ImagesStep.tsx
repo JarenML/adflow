@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, ChevronDown, CircleAlert, ImageIcon, MessageSquare, RefreshCw, Wand2 } from 'lucide-react';
+import { ArrowRight, ChevronDown, CircleAlert, Clapperboard, ImageIcon, MessageSquare, RefreshCw, Wand2 } from 'lucide-react';
 import type { EpisodeState, ImageItem } from '@shared/types';
 import { api, useLive } from '../lib/api';
 import type { ChatTarget } from '../components/BrainPanel';
@@ -23,7 +23,17 @@ function ImageCard({ img, episode, onAsk, active }: { img: ImageItem; episode: E
           </div>
         )}
         <div className="absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/70 to-transparent p-2.5">
-          <span className="rounded-md bg-black/50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-white">{img.sceneId}</span>
+          <span className="flex items-center gap-1.5">
+            <span className="rounded-md bg-black/50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-white">{img.sceneId}</span>
+            {/* The script made this scene a video clip: this image is its first frame. */}
+            {img.clip && (
+              <span title="El guion la convierte en clip de video: esta imagen es su primer cuadro.">
+                <Tag tone="cyan">
+                  <Clapperboard className="size-3" /> Clip
+                </Tag>
+              </span>
+            )}
+          </span>
           {img.status === 'done' && <Tag tone="ok">Lista</Tag>}
           {img.status === 'error' && <Tag tone="bad">Error</Tag>}
           {img.status === 'pending' && <Tag>Pendiente</Tag>}

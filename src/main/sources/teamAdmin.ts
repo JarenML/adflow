@@ -7,7 +7,6 @@ import path from 'node:path';
 import type { Playbook, SourceEpisode, StepId, TeamProgress, TeamStatus } from '@shared/types';
 import { stepLabel } from '@shared/progress';
 import { getDataDir, loadSettings, writeJson } from '../store';
-import { playbookFilesSource } from './playbookFiles';
 import type { EpisodeSource } from './types';
 
 /** What the admin returns for an episode (shared/socialProduction.ts in robles.ai). */
@@ -218,12 +217,10 @@ export const teamAdminSource: EpisodeSource = {
     }));
   },
 
-  async brief(p: Playbook, episodeId: string): Promise<string> {
+  async brief(_p: Playbook, episodeId: string): Promise<string> {
     const r = await api<RemoteEpisode>(`/episodes/${remoteId(episodeId)}`);
-    if (r.brief?.trim()) return r.brief;
-    // Episodes created in the admin carry only a title and summary: add the catalog's series facts.
-    const facts = await playbookFilesSource.brief(p, '').catch(() => '');
-    return [`## «${r.title}» (${r.businessType})`, r.summary, facts].filter(Boolean).join('\n\n');
+    // Episodes created in the admin carry only a title and a summary.
+    return r.brief?.trim() || r.summary;
   },
 
   async script(_p, episodeId) {

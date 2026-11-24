@@ -1,7 +1,7 @@
 // Right-hand panel: what Claude is doing (live activity) and a box to ask it for changes.
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowUp, Bot, CircleAlert, CircleCheck, FileEdit, Info, Sparkles, Square } from 'lucide-react';
+import { ArrowUp, Bot, CircleAlert, CircleCheck, FileEdit, Info, PanelRightClose, Sparkles, Square } from 'lucide-react';
 import type { ActivityEvent, EpisodeState, StepId } from '@shared/types';
 import { STEPS } from '@shared/types';
 import { api, useActivity } from '../lib/api';
@@ -26,17 +26,20 @@ export function BrainPanel({
   step,
   target,
   onClearTarget,
+  onCollapse,
 }: {
   episode: EpisodeState;
   step: StepId;
   target?: ChatTarget;
   onClearTarget: () => void;
+  /** Hides the panel (the episode view keeps a thin bar to show it again). */
+  onCollapse?: () => void;
 }) {
   const activity = useActivity(episode.id).filter((a) => a.step === step);
   const [message, setMessage] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const working = episode.steps[step].status === 'working';
-  const canChat = (step === 'script' || step === 'images' || step === 'videos' || step === 'publish') && episode.steps[step].status !== 'locked';
+  const canChat = (step === 'script' || step === 'images' || step === 'videos' || step === 'render' || step === 'publish') && episode.steps[step].status !== 'locked';
   const hasOutput = !!episode.brain.sessions[step];
 
   useEffect(() => {
@@ -49,7 +52,7 @@ export function BrainPanel({
     const action =
       step === 'script'
         ? ({ step, type: 'feedback', message: text } as const)
-        : step === 'publish'
+        : step === 'publish' || step === 'render'
           ? ({ step, type: 'feedback', message: text } as const)
           : step === 'images'
           ? ({ step, type: 'feedback', message: text, sceneId: target?.sceneId } as const)
@@ -63,8 +66,8 @@ export function BrainPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-line px-4 py-3">
-        <div className="flex items-center gap-2.5">
+      <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2.5">
           <div className="relative grid size-7 place-items-center rounded-lg bg-[#d97757]/15 text-[#e8956f]">
             <Sparkles className="size-4" />
             {working && <span className="absolute -right-0.5 -top-0.5 size-2 animate-pulse rounded-full bg-brand-2" />}
@@ -74,11 +77,18 @@ export function BrainPanel({
             <p className="text-[11px] text-faint">{working ? 'Trabajando…' : `Paso: ${stepLabel}`}</p>
           </div>
         </div>
-        {working && (
-          <button className="no-drag flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-mute hover:bg-panel-2 hover:text-ink" onClick={() => api.act(episode.id, { step, type: 'cancel' })}>
-            <Square className="size-3" /> Detener
-          </button>
-        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {working && (
+            <button className="no-drag flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-mute hover:bg-panel-2 hover:text-ink" onClick={() => api.act(episode.id, { step, type: 'cancel' })}>
+              <Square className="size-3" /> Detener
+            </button>
+          )}
+          {onCollapse && (
+            <button className="no-drag grid size-7 place-items-center rounded-lg text-faint hover:bg-panel-2 hover:text-ink" title="Ocultar el panel de Claude" onClick={onCollapse}>
+              <PanelRightClose className="size-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div ref={listRef} className="flex-1 space-y-2 overflow-y-auto px-4 py-4">
@@ -139,11 +149,13 @@ export function BrainPanel({
             className={cx(inputCls, 'min-h-[76px] resize-none pr-11 text-[13px]')}
             placeholder={
               !canChat
-                ? 'El chat se activa en Guion, Imágenes, Videos y Publicación.'
+                ? 'El chat se activa en Guion, Imágenes, Videos, Render final y Publicación.'
                 : !hasOutput
                   ? 'Primero genera este paso.'
                   : step === 'publish'
                     ? 'Ej.: el texto más corto y que mencione la demo gratis…'
+                    : step === 'render'
+                    ? 'Ej.: los subtítulos más grandes y que el logo entre medio segundo antes…'
                     : step === 'script'
                     ? 'Ej.: el gancho es muy lento, que el contador aparezca desde el primer cuadro…'
                     : 'Ej.: en la S02 el personaje debe mirar a cámara…'

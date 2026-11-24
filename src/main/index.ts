@@ -5,14 +5,14 @@ import path from 'node:path';
 import type { AdflowApi } from '@shared/api';
 import { checkScript } from '@shared/playbookConfig';
 import { runDiagnostics } from './diagnostics';
-import { Pipeline } from './pipeline';
+import { fileUrl, Pipeline } from './pipeline';
 import { loadConfig, sectionStatus } from './playbook';
 import { sourceInfos } from './sources';
 import { checkTeamConnection, TEAM_TOKEN_SECRET } from './sources/teamAdmin';
 import { PROVIDERS, SECRET_LABELS, estimate } from './providers/registry';
-import { listVoices } from './providers/voices';
+import { listVoices, voiceById, voiceSample } from './providers/voices';
 import { getSecrets, secretStatus, setSecret } from './secrets';
-import { activePlaybook, episodesDir, initStore, loadSettings, saveSettings } from './store';
+import { activePlaybook, episodesDir, getDataDir, initStore, loadSettings, saveSettings } from './store';
 import { syncTeamPlaybook, teamPlaybookStatus } from './teamPlaybook';
 
 protocol.registerSchemesAsPrivileged([
@@ -61,6 +61,12 @@ function createWindow() {
   if (snap) {
     win.webContents.once('did-finish-load', () => {
       setTimeout(async () => {
+        // ADFLOW_SNAPSHOT_SCROLL=<px> scrolls the main area first, to check what is below the fold.
+        const scroll = Number(process.env.ADFLOW_SNAPSHOT_SCROLL ?? 0);
+        if (scroll) {
+          await win!.webContents.executeJavaScript(`document.querySelector('main')?.scrollTo(0, ${scroll})`);
+          await new Promise((r) => setTimeout(r, 400));
+        }
         const img = await win!.webContents.capturePage();
         fs.writeFileSync(snap, img.toPNG());
         app.quit();
@@ -107,6 +113,7 @@ function registerIpc() {
   handle('storagePath', () => episodesDir(loadSettings()));
   handle('adCopy', (id: string) => pipeline.adCopy(id));
   handle('finalVideo', (id: string) => pipeline.finalVideo(id));
+  handle('renderReport', (id: string) => pipeline.renderReport(id));
   handle('library', () => pipeline.library());
   handle('sourceBrief', (id: string) => pipeline.sourceBrief(id));
   handle('episodes', () => pipeline.list());
@@ -125,9 +132,13 @@ function registerIpc() {
   });
   handle('images', (id: string) => pipeline.images(id));
   handle('clips', (id: string) => pipeline.clips(id));
+  handle('clipCandidates', (id: string) => pipeline.clipCandidates(id));
   handle('narration', (id: string) => pipeline.narration(id));
-  handle('voices', (providerId: string) => listVoices(providerId, getSecrets()));
+  handle('voices', (providerId: string, refresh?: boolean) => listVoices(providerId, getSecrets(), { dataDir: getDataDir(), refresh }));
   handle('previewVoice', (id: string, text: string) => pipeline.previewVoice(id, text));
+  // The provider's recorded sample of a voice (free): downloaded once, played from disk.
+  handle('voiceById', (providerId: string, voiceId: string) => voiceById(providerId, voiceId, getSecrets(), { dataDir: getDataDir() }));
+  handle('voiceSample', async (voiceId: string, previewUrl: string) => fileUrl(await voiceSample(getDataDir(), voiceId, previewUrl)));
   handle('openPath', (p: string) => (/^https?:\/\//.test(p) ? shell.openExternal(p) : shell.openPath(p).then(() => undefined)));
   handle('pickFolder', async () => {
     const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });

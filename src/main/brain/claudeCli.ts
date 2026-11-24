@@ -21,6 +21,15 @@ export interface BrainRun {
   addDirs?: string[];
   /** Built-in tools Claude may use. File tools only: the brain writes files, AdFlow runs providers. */
   tools?: string[];
+  /** Permission rules for tools that would otherwise ask (e.g. Bash(npx remotion still:*)). */
+  allowedTools?: string[];
+  /**
+   * Lets Claude reach the connectors of its Claude account (e.g. ElevenLabs). Off by default: the
+   * brain runs isolated, with no MCP server. Only the tools in allowedTools can actually be called.
+   */
+  accountMcp?: boolean;
+  /** Extra Claude Code settings (e.g. hooks that guard paid tools), passed with --settings. */
+  settings?: Record<string, unknown>;
   configDir?: string;
   signal?: AbortSignal;
   onEvent?: (e: BrainEvent) => void;
@@ -51,10 +60,19 @@ function describeTool(name: string, input: Record<string, unknown>): string {
     case 'Glob':
     case 'Grep':
       return `Busca ${short}`;
+    case 'Bash':
+      return `Ejecuta ${String(input.command ?? '').split(' ')[0]}`;
     default:
+      // Connector tools: mcp__claude_ai_ElevenLabs__creative_generate_video → ElevenLabs · creative_generate_video
+      if (name.startsWith('mcp__')) {
+        const [, server = '', tool = ''] = name.split('__');
+        return `${server.replace(/^claude_ai_/, '').replace(/_/g, ' ')} · ${tool}`;
+      }
       return `${name} ${short}`.trim();
   }
 }
+
+export const BRAIN_FILE_TOOLS = DEFAULT_TOOLS;
 
 export function runBrain(run: BrainRun): Promise<BrainResult> {
   const adflowDir = path.join(run.cwd, '.adflow');
@@ -67,9 +85,7 @@ export function runBrain(run: BrainRun): Promise<BrainResult> {
     '--output-format',
     'stream-json',
     '--verbose',
-    '--strict-mcp-config',
-    '--mcp-config',
-    mcpFile,
+    ...(run.accountMcp ? [] : ['--strict-mcp-config', '--mcp-config', mcpFile]),
     '--tools',
     (run.tools ?? DEFAULT_TOOLS).join(','),
     '--permission-mode',
@@ -79,6 +95,12 @@ export function runBrain(run: BrainRun): Promise<BrainResult> {
   if (run.effort) args.push('--effort', run.effort);
   if (run.sessionId) args.push('--resume', run.sessionId);
   for (const d of run.addDirs ?? []) args.push('--add-dir', d);
+  if (run.settings) {
+    const settingsFile = path.join(adflowDir, `settings-${process.pid}-${Date.now()}.json`);
+    fs.writeFileSync(settingsFile, JSON.stringify(run.settings), 'utf8');
+    args.push('--settings', settingsFile);
+  }
+  if (run.allowedTools?.length) args.push('--allowedTools', ...run.allowedTools);
   if (run.system) {
     const sysFile = path.join(adflowDir, 'system-prompt.md');
     fs.writeFileSync(sysFile, run.system, 'utf8');

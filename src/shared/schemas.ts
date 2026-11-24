@@ -77,7 +77,7 @@ export const videoPromptsSchema = z.object({
         motivo: z.string().default(''),
       }),
     )
-    .min(1)
+    // Empty when the script has no clip scenes (AdFlow writes it; Claude never does).
     .max(6),
 });
 export type VideoPrompts = z.infer<typeof videoPromptsSchema>;
@@ -105,6 +105,16 @@ export function screenTexts(s: Scene): string[] {
 }
 
 export type SceneKind = 'real' | '2d' | 'logo' | 'final' | 'other';
+
+/**
+ * Whether the script decided this scene is an AI video clip (tipo real_clip). The script is the only
+ * place that decides it: Videos takes exactly these scenes, and adding or removing a clip there
+ * changes the scene's tipo in escenas.json.
+ */
+export function isClipScene(s: { tipo: string }): boolean {
+  const t = s.tipo.toLowerCase();
+  return t.startsWith('real') && t.includes('clip');
+}
 
 export function sceneKind(tipo: string): SceneKind {
   const t = tipo.toLowerCase();

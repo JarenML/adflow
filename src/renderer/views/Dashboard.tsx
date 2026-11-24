@@ -1,7 +1,7 @@
 // Jobs: the episodes in AdFlow by team status, plus what is waiting for you.
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, BellDot, Clapperboard, Cpu, ImageIcon, Library, Plus } from 'lucide-react';
+import { ArrowRight, BellDot, Clapperboard, Cpu, Film, ImageIcon, Library, Mic, Plus } from 'lucide-react';
 import type { EpisodeState, QueueSnapshot, TeamStatus } from '@shared/types';
 import { TEAM_STATUSES, TEAM_STATUS_LABEL, toTeamStatus } from '@shared/progress';
 import { api, useLive, useQueue } from '../lib/api';
@@ -20,12 +20,21 @@ function Lanes({ q }: { q?: QueueSnapshot }) {
   const lanes = [
     ['brain', 'Claude', Cpu],
     ['image', 'Imágenes', ImageIcon],
-    ['render', 'Voz y render', Clapperboard],
+    ['clip', 'Clips', Film],
+    ['voice', 'Voz', Mic],
+    ['render', 'Render', Clapperboard],
   ] as const;
+  const ep = q.episodes;
   return (
-    <div className="grid grid-cols-3 gap-3">
+    <div className="space-y-2">
+    <p className="text-[12px] text-faint">
+      Episodios trabajando: <span className="font-medium text-ink">{ep.active}</span>
+      {ep.limit > 0 ? ` de ${ep.limit}` : ' (sin límite)'}
+    </p>
+    <div className="grid grid-cols-5 gap-3">
       {lanes.map(([id, label, Icon]) => {
         const l = q.lanes[id];
+        const max = l.limit === 0 ? 'sin límite' : l.scope === 'episode' ? `máx ${l.limit} por episodio` : `máx ${l.limit} en total`;
         return (
           <div key={id} className="flex items-center gap-3 rounded-xl border border-line bg-panel px-4 py-3">
             <div className={cx('grid size-9 place-items-center rounded-lg', l.running ? 'bg-brand-2/10 text-brand-2' : 'bg-panel-2 text-faint')}>
@@ -34,12 +43,14 @@ function Lanes({ q }: { q?: QueueSnapshot }) {
             <div>
               <p className="text-[13px] font-semibold">{label}</p>
               <p className="text-[11.5px] text-faint">
-                {l.running}/{l.limit} en curso · {l.waiting} en cola
+                {l.running} en curso · {l.waiting} en cola
               </p>
+              <p className="text-[11px] text-faint/80">{max}</p>
             </div>
           </div>
         );
       })}
+    </div>
     </div>
   );
 }

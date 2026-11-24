@@ -62,6 +62,26 @@ export const PROVIDERS: ProviderInfo[] = [
     costNote: 'Créditos generativos de Adobe por clip.',
   },
   {
+    id: 'elevenlabs-mcp',
+    capability: 'video',
+    name: 'ElevenLabs · MCP (tu plan)',
+    description:
+      'Claude genera cada clip con el conector de ElevenLabs de tu cuenta de Claude: sube la imagen de la escena como primer fotograma y usa Veo 3.1 Fast, 9:16. Funciona con el plan Creator.',
+    billing: 'credits',
+    implemented: true,
+    costNote: '~3,640 créditos de ElevenLabs por clip de 4 s (el doble a 8 s). Conecta ElevenLabs en claude.ai → Connectors.',
+  },
+  {
+    id: 'elevenlabs-video',
+    capability: 'video',
+    name: 'ElevenLabs · Veo 3.1 Fast',
+    description: 'API de imagen y video de ElevenLabs con Veo 3.1 Fast: la imagen de la escena como primer fotograma, 9:16.',
+    billing: 'credits',
+    implemented: true,
+    secret: 'elevenlabs',
+    costNote: 'Créditos de ElevenLabs por clip (plan Pro o superior para la API de video).',
+  },
+  {
     id: 'heygen-video',
     capability: 'video',
     name: 'HeyGen · imagen a video',
@@ -104,21 +124,21 @@ export const PROVIDERS: ProviderInfo[] = [
     id: 'elevenlabs',
     capability: 'voice',
     name: 'ElevenLabs',
-    description: 'Voz principal del playbook (eleven_v3, etiquetas de emoción y tiempos por palabra).',
+    description: 'Voz principal del playbook (eleven_v3, con sus etiquetas de emoción).',
     billing: 'credits',
-    implemented: false,
+    implemented: true,
     secret: 'elevenlabs',
-    costNote: '~56 créditos por toma (17 tomas ≈ 950 créditos).',
+    costNote: '1 crédito por carácter (eleven_v3): un video completo ≈ 400–600 créditos. Con límite por ejecución.',
   },
   {
     id: 'heygen-voice',
     capability: 'voice',
-    name: 'HeyGen · voces',
-    description: 'Respaldo cuando no hay créditos de ElevenLabs.',
+    name: 'HeyGen · voces (MCP)',
+    description:
+      'Voces de HeyGen por el MCP de HeyGen de tu Claude Code (sin API key en AdFlow): catálogo con muestras gratis y narración con una sola llamada por frase.',
     billing: 'credits',
-    implemented: false,
-    secret: 'heygen',
-    costNote: 'Créditos premium del plan de HeyGen.',
+    implemented: true,
+    costNote: 'Cuota de voz de tu plan de HeyGen; AdFlow mide los créditos premium antes y después de cada ejecución.',
   },
   {
     id: 'openai-tts',
@@ -175,7 +195,12 @@ export function estimate(providerId: string, units: number): string {
     case 'codex-cli':
       return `${units} imagen${units === 1 ? '' : 'es'} · incluido en Codex · ~${units} min`;
     case 'elevenlabs':
-      return `≈ ${units * 2 * 56} créditos (${units} frases × 2 tomas)`;
+      // units = characters of the narration (1 credit each with eleven_v3).
+      return `≈ ${units.toLocaleString('es-PE')} créditos (1 por carácter, una toma por frase)`;
+    case 'elevenlabs-mcp':
+      return `${units} clip${units === 1 ? '' : 's'} · ≈ ${(units * 3640).toLocaleString('es-PE')} créditos de ElevenLabs a 4 s`;
+    case 'elevenlabs-video':
+      return `${units} clip${units === 1 ? '' : 's'} · créditos de ElevenLabs según modelo, duración y resolución`;
     case 'windows-sapi':
     case 'edge-tts':
       return `${units} frases · gratis`;

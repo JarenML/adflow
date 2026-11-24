@@ -2,6 +2,7 @@
 import type {
   ActivityEvent,
   Capability,
+  ClipCandidate,
   ClipItem,
   DiagnosticItem,
   EpisodeSourceInfo,
@@ -13,6 +14,7 @@ import type {
   PlaybookSyncStatus,
   ProviderInfo,
   QueueSnapshot,
+  RenderReport,
   Settings,
   VoiceOption,
 } from './types';
@@ -44,7 +46,7 @@ export interface AdflowApi {
   episodes(): Promise<EpisodeState[]>;
   episode(id: string): Promise<EpisodeState>;
   createEpisode(sourceEpisodeId: string): Promise<EpisodeState>;
-  patchEpisode(id: string, patch: Partial<Pick<EpisodeState, 'providers' | 'voice' | 'closingVoice' | 'videoConfig' | 'brain'>>): Promise<EpisodeState>;
+  patchEpisode(id: string, patch: Partial<Pick<EpisodeState, 'providers' | 'voice' | 'voiceCreditLimit' | 'heygenCreditLimit' | 'closingVoice' | 'videoConfig' | 'brain'>>): Promise<EpisodeState>;
   act(id: string, action: PipelineAction): Promise<void>;
   activity(id: string): Promise<ActivityEvent[]>;
   queue(): Promise<QueueSnapshot>;
@@ -52,11 +54,19 @@ export interface AdflowApi {
   script(id: string): Promise<{ script: Script | null; guion: string | null; checks: ScriptCheck[]; error?: string }>;
   images(id: string): Promise<ImageItem[]>;
   clips(id: string): Promise<ClipItem[]>;
+  /** Real scenes of the script that stay as an image (could become a clip). */
+  clipCandidates(id: string): Promise<ClipCandidate[]>;
   narration(id: string): Promise<NarrationLine[]>;
-  voices(providerId: string): Promise<VoiceOption[]>;
+  /** Voices of a provider; refresh re-reads a cached catalog (HeyGen). */
+  voices(providerId: string, refresh?: boolean): Promise<VoiceOption[]>;
   previewVoice(id: string, text: string): Promise<{ url?: string; error?: string }>;
+  /** Local URL of a voice's recorded sample (ElevenLabs preview_url): free, no credits. */
+  /** One voice by its ID (free), for a voice heard on the provider's site. */
+  voiceById(providerId: string, voiceId: string): Promise<VoiceOption>;
+  voiceSample(voiceId: string, previewUrl: string): Promise<string>;
   adCopy(id: string): Promise<string | null>;
   finalVideo(id: string): Promise<{ file: string; url: string } | null>;
+  renderReport(id: string): Promise<RenderReport | null>;
 
   openPath(p: string): Promise<void>;
   pickFolder(): Promise<string | null>;
@@ -85,6 +95,7 @@ export const API_METHODS = [
   'storagePath',
   'adCopy',
   'finalVideo',
+  'renderReport',
   'library',
   'sourceBrief',
   'episodes',
@@ -97,9 +108,12 @@ export const API_METHODS = [
   'script',
   'images',
   'clips',
+  'clipCandidates',
   'narration',
   'voices',
   'previewVoice',
+  'voiceById',
+  'voiceSample',
   'openPath',
   'pickFolder',
   'defaults',
