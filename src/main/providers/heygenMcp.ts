@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { VoiceOption } from '@shared/types';
-import { runBrain, type BrainEvent } from '../brain/claudeCli';
+import { runBrain, type BrainEvent, type BrainUsageTag } from '../brain/claudeCli';
 
 const HG = 'mcp__heygen__';
 const CATALOG_DAYS = 7;
@@ -210,6 +210,7 @@ export async function heygenSpeech(opts: {
   configDir?: string;
   signal?: AbortSignal;
   onEvent?: (e: BrainEvent) => void;
+  usageFor?: BrainUsageTag;
 }): Promise<HeygenSpeechResult> {
   const adflow = path.join(opts.dir, '.adflow');
   const run = path.join(adflow, `heygen-${Date.now()}`);
@@ -250,6 +251,7 @@ No descargues los audios: AdFlow lo hace. Responde en una línea qué pasó.`,
     configDir: opts.configDir,
     signal: opts.signal,
     onEvent: opts.onEvent,
+    usageFor: opts.usageFor,
     settings: {
       hooks: {
         PreToolUse: [{ matcher: `${HG}.*`, hooks: [{ type: 'command', command: `node ${q(script)} ${q(allowedFile)} ${q(path.join(run, 'used'))}` }] }],

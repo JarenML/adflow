@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AdflowApi } from '@shared/api';
+import type { AdflowApi, ClaudeUsage } from '@shared/api';
 import type { ActivityEvent, EpisodeState, QueueSnapshot } from '@shared/types';
 
 declare global {
@@ -40,6 +40,16 @@ export function useActivity(id: string): ActivityEvent[] {
     });
   }, [id]);
   return items;
+}
+
+/** The Claude account's usage limits, updated every time AdFlow runs Claude. */
+export function useClaudeUsage(): ClaudeUsage | undefined {
+  const [u, setU] = useState<ClaudeUsage>();
+  useEffect(() => {
+    api.claudeUsage().then(setU);
+    return api.on('claudeUsage', setU);
+  }, []);
+  return u;
 }
 
 export function useQueue(): QueueSnapshot | undefined {

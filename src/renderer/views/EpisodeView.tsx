@@ -3,8 +3,9 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronLeft, FolderOpen, PanelRightOpen } from 'lucide-react';
 import type { StepId } from '@shared/types';
 import { STEPS } from '@shared/types';
-import { api, useEpisode } from '../lib/api';
+import { api, useClaudeUsage, useEpisode } from '../lib/api';
 import { BrainPanel, type ChatTarget } from '../components/BrainPanel';
+import { EpisodeClaudeUsage } from '../components/ClaudeUsage';
 import { Timeline } from '../components/Timeline';
 import { Button, StatusPill, Tag, TeamStatusPill } from '../components/ui';
 import { PrepStep } from '../steps/PrepStep';
@@ -61,6 +62,7 @@ function useChatPanel() {
 
 export function EpisodeView({ id, initialStep, onBack }: { id: string; initialStep?: StepId; onBack: () => void }) {
   const episode = useEpisode(id);
+  const claudeUsage = useClaudeUsage();
   const chat = useChatPanel();
   const [selected, setSelected] = useState<StepId | null>(initialStep ?? null);
   const [target, setTarget] = useState<ChatTarget>();
@@ -100,6 +102,7 @@ export function EpisodeView({ id, initialStep, onBack }: { id: string; initialSt
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2 pr-36">
+          <EpisodeClaudeUsage episode={episode} usage={claudeUsage} />
           <Button size="sm" variant="ghost" icon={<FolderOpen className="size-4" />} onClick={() => api.openPath(episode.dir)}>
             Carpeta
           </Button>

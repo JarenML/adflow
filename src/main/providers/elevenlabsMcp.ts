@@ -5,7 +5,7 @@
 // MP4. Generating spends credits, so the recipe forbids retrying a generation and caps the price.
 import fs from 'node:fs';
 import path from 'node:path';
-import { runBrain, type BrainEvent } from '../brain/claudeCli';
+import { runBrain, type BrainEvent, type BrainUsageTag } from '../brain/claudeCli';
 
 const EL = 'mcp__claude_ai_ElevenLabs__';
 
@@ -48,6 +48,7 @@ export interface McpClipJob {
   configDir?: string;
   signal?: AbortSignal;
   onEvent?: (e: BrainEvent) => void;
+  usageFor?: BrainUsageTag;
 }
 
 export interface McpClipResult {
@@ -189,6 +190,7 @@ export async function mcpClip(job: McpClipJob): Promise<McpClipResult> {
     configDir: job.configDir,
     signal: job.signal,
     onEvent: job.onEvent,
+    usageFor: job.usageFor,
   });
 
   const charged = fs.existsSync(guard.marker);

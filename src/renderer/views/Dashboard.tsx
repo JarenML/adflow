@@ -4,7 +4,8 @@ import { motion } from 'framer-motion';
 import { ArrowRight, BellDot, Clapperboard, Cpu, Film, ImageIcon, Library, Mic, Plus } from 'lucide-react';
 import type { EpisodeState, QueueSnapshot, TeamStatus } from '@shared/types';
 import { TEAM_STATUSES, TEAM_STATUS_LABEL, toTeamStatus } from '@shared/progress';
-import { api, useLive, useQueue } from '../lib/api';
+import { api, useClaudeUsage, useLive, useQueue } from '../lib/api';
+import { ClaudeCardLine } from '../components/ClaudeUsage';
 import { MiniTimeline } from '../components/Timeline';
 import { Button, cx, Empty, formatDate, TeamStatusPill } from '../components/ui';
 
@@ -58,6 +59,7 @@ function Lanes({ q }: { q?: QueueSnapshot }) {
 export function Dashboard({ onOpen, onCreate }: { onOpen: (id: string) => void; onCreate: () => void }) {
   const [episodes] = useLive(() => api.episodes(), []);
   const q = useQueue();
+  const claudeUsage = useClaudeUsage();
   const [filter, setFilter] = useState<Filter>('all');
   const list = episodes ?? [];
   const counts = useMemo(() => {
@@ -137,6 +139,9 @@ export function Dashboard({ onOpen, onCreate }: { onOpen: (id: string) => void; 
                 <div className="mt-4 flex items-center justify-between">
                   <MiniTimeline episode={e} />
                   <span className="text-[11px] text-faint">{formatDate(e.updatedAt)}</span>
+                </div>
+                <div className="mt-2">
+                  <ClaudeCardLine episode={e} usage={claudeUsage} />
                 </div>
               </motion.button>
             );

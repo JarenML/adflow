@@ -51,6 +51,10 @@ export interface CostEntry {
   /** USD equivalent reported by Claude Code (covered by the subscription), or provider credits. */
   usd?: number;
   credits?: number;
+  /** Claude Code runs: tokens, model and time, as Claude Code reports them. */
+  tokens?: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  model?: string;
+  durationMs?: number;
 }
 
 export interface VoiceChoice {

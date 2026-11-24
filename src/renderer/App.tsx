@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { BriefcaseBusiness, Library, Settings as SettingsIcon, WandSparkles } from 'lucide-react';
 import type { AppInfo } from '@shared/api';
 import type { Settings, StepId } from '@shared/types';
-import { api, useQueue } from './lib/api';
+import { api, useClaudeUsage, useQueue } from './lib/api';
 import { cx, Logo } from './components/ui';
+import { LimitBars } from './components/ClaudeUsage';
 import { Dashboard } from './views/Dashboard';
 import { CreateView } from './views/CreateView';
 import { LibraryView } from './views/Library';
@@ -28,6 +29,7 @@ export default function App() {
   const [route, setRoute] = useState<Route>(initialRoute);
   const [settings, setSettings] = useState<Settings>();
   const q = useQueue();
+  const claudeUsage = useClaudeUsage();
   const running = q ? Object.values(q.lanes).reduce((a, l) => a + l.running, 0) : 0;
   const waiting = q ? Object.values(q.lanes).reduce((a, l) => a + l.waiting, 0) : 0;
   useEffect(() => {
@@ -96,6 +98,11 @@ export default function App() {
             {waiting > 0 && <span className="text-faint">· {waiting} en cola</span>}
           </div>
           {pb && <p className="mt-2 truncate text-[11px] text-faint" title={pb.rootDir}>{pb.name}</p>}
+          {claudeUsage?.fiveHour && (
+            <div className="mt-3 border-t border-line pt-3">
+              <LimitBars usage={claudeUsage} />
+            </div>
+          )}
         </div>
       </aside>
 

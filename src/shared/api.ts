@@ -25,6 +25,24 @@ export interface UpdateState {
   readyVersion: string | null;
 }
 
+/** One usage limit of the Claude account, as Claude Code reports it. */
+export interface LimitWindow {
+  /** 0–100 */
+  pct: number;
+  /** When the window resets (ms since epoch). */
+  resetsAt: number;
+}
+
+export interface ClaudeUsage {
+  fiveHour?: LimitWindow;
+  sevenDay?: LimitWindow;
+  /** When Claude Code last reported them. */
+  at?: string;
+  /** Learned from AdFlow's own runs: % of the 5-hour limit per USD equivalent (null until there is enough data). */
+  pctPerUsd: number | null;
+  samples: number;
+}
+
 export interface AppInfo extends UpdateState {
   version: string;
 }
@@ -85,11 +103,14 @@ export interface AdflowApi {
   appInfo(): Promise<AppInfo>;
   /** Closes AdFlow, installs the downloaded update and opens the new version. */
   restartToUpdate(): Promise<void>;
+  /** The Claude account's usage limits, as last reported by Claude Code. */
+  claudeUsage(): Promise<ClaudeUsage>;
 
   on(channel: 'episode', cb: (e: EpisodeState) => void): () => void;
   on(channel: 'activity', cb: (a: ActivityEvent) => void): () => void;
   on(channel: 'queue', cb: (q: QueueSnapshot) => void): () => void;
   on(channel: 'update', cb: (u: UpdateState) => void): () => void;
+  on(channel: 'claudeUsage', cb: (u: ClaudeUsage) => void): () => void;
 }
 
 export const API_METHODS = [
@@ -134,4 +155,5 @@ export const API_METHODS = [
   'defaults',
   'appInfo',
   'restartToUpdate',
+  'claudeUsage',
 ] as const;

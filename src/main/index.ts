@@ -15,6 +15,7 @@ import { getSecrets, secretStatus, setSecret } from './secrets';
 import { activePlaybook, episodesDir, getDataDir, initStore, loadSettings, saveSettings } from './store';
 import { syncTeamPlaybook, teamPlaybookStatus } from './teamPlaybook';
 import { restartToUpdate, startAutoUpdates, updateState } from './updater';
+import { claudeUsage, initClaudeLimits } from './brain/claudeLimits';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'adflow', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
@@ -149,6 +150,7 @@ function registerIpc() {
   });
   handle('appInfo', () => ({ version: app.getVersion(), ...updateState() }));
   handle('restartToUpdate', () => restartToUpdate());
+  handle('claudeUsage', () => claudeUsage());
   handle('defaults', (cap) => loadSettings().defaults[cap as keyof ReturnType<typeof loadSettings>['defaults']]);
 }
 
@@ -157,6 +159,7 @@ if (process.env.ADFLOW_DATA_DIR) app.setPath('userData', process.env.ADFLOW_DATA
 
 void app.whenReady().then(() => {
   initStore(app.getPath('userData'));
+  initClaudeLimits(app.getPath('userData'), (u) => broadcast('claudeUsage', u));
 
   // adflow://file/<encoded file:// URL> serves local episode files (images, clips, audio).
   protocol.handle('adflow', (req) => {

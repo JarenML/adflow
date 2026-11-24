@@ -3,7 +3,9 @@
 // Claude Code uses whatever account it is signed in as (or a managed CLAUDE_CONFIG_DIR).
 import fs from 'node:fs';
 import path from 'node:path';
+import type { CostEntry, StepId } from '@shared/types';
 import { startCli } from '../proc';
+import { limitsReported, runEnded, runStarted } from './claudeLimits';
 
 export interface BrainEvent {
   kind: 'start' | 'text' | 'tool' | 'result' | 'error';
@@ -33,6 +35,14 @@ export interface BrainRun {
   configDir?: string;
   signal?: AbortSignal;
   onEvent?: (e: BrainEvent) => void;
+  /** The episode and step this run works for: its usage is added to the episode's costs. */
+  usageFor?: BrainUsageTag;
+}
+
+export interface BrainUsageTag {
+  episodeId: string;
+  step: StepId;
+  label: string;
 }
 
 export interface BrainResult {
@@ -41,7 +51,22 @@ export interface BrainResult {
   text: string;
   costUsd?: number;
   durationMs?: number;
+  tokens?: CostEntry['tokens'];
+  model?: string;
   error?: string;
+}
+
+/** Every finished run (tagged or not) is reported here: the pipeline adds tagged ones to their episode. */
+type UsageListener = (tag: BrainUsageTag | undefined, res: BrainResult) => void;
+let usageListener: UsageListener = () => {};
+export function onBrainUsage(fn: UsageListener): void {
+  usageListener = fn;
+}
+
+function tokensOf(u: Record<string, any> | undefined): CostEntry['tokens'] {
+  if (!u) return undefined;
+  const n = (v: unknown) => (typeof v === 'number' ? v : 0);
+  return { input: n(u.input_tokens), output: n(u.output_tokens), cacheRead: n(u.cache_read_input_tokens), cacheWrite: n(u.cache_creation_input_tokens) };
 }
 
 const DEFAULT_TOOLS = ['Read', 'Write', 'Edit', 'Glob', 'Grep'];
@@ -113,6 +138,7 @@ export function runBrain(run: BrainRun): Promise<BrainResult> {
 
   return new Promise((resolve) => {
     const child = startCli('claude', args, { cwd: run.cwd, env });
+    runStarted();
     let buffer = '';
     let stderr = '';
     let sessionId = run.sessionId;
@@ -127,7 +153,9 @@ export function runBrain(run: BrainRun): Promise<BrainResult> {
       } catch {
         return;
       }
-      if (ev.type === 'system' && ev.subtype === 'init') {
+      if (ev.type === 'rate_limit_event') {
+        limitsReported(ev.rate_limit_info);
+      } else if (ev.type === 'system' && ev.subtype === 'init') {
         sessionId = ev.session_id;
         emit({ kind: 'start', text: `Sesión ${String(ev.session_id).slice(0, 8)} · ${ev.model ?? ''}` });
       } else if (ev.type === 'assistant') {
@@ -142,6 +170,8 @@ export function runBrain(run: BrainRun): Promise<BrainResult> {
           text: ev.result ?? '',
           costUsd: ev.total_cost_usd,
           durationMs: ev.duration_ms,
+          tokens: tokensOf(ev.usage),
+          model: Object.keys(ev.modelUsage ?? {}).join(', ') || undefined,
           error: ev.is_error ? String(ev.result ?? ev.subtype) : undefined,
         };
         emit({ kind: final.ok ? 'result' : 'error', text: final.ok ? 'Listo' : final.error ?? 'Error' });
@@ -165,7 +195,11 @@ export function runBrain(run: BrainRun): Promise<BrainResult> {
     child.on('close', (code) => {
       run.signal?.removeEventListener('abort', onAbort);
       handle(buffer);
-      if (final) return resolve(final);
+      runEnded(final?.costUsd);
+      if (final) {
+        usageListener(run.usageFor, final);
+        return resolve(final);
+      }
       const error = run.signal?.aborted
         ? 'Cancelado'
         : stderr.trim() || `Claude Code terminó con código ${code}`;

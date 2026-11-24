@@ -27,7 +27,7 @@ import {
   videoPromptsSchema,
   type Script,
 } from '@shared/schemas';
-import { BRAIN_FILE_TOOLS, runBrain, type BrainEvent } from './brain/claudeCli';
+import { BRAIN_FILE_TOOLS, onBrainUsage, runBrain, type BrainEvent } from './brain/claudeCli';
 import { masterAudio, mediaDuration, prepareProject, renderVideo, writeMaterialList } from './render';
 import * as P from './brain/prompts';
 import { episodeSlug, serieSlug } from './playbookParse';
@@ -101,6 +101,17 @@ export class Pipeline {
   private dirs = new Map<string, string>();
 
   constructor(private ev: PipelineEvents) {
+    // Every Claude run made for an episode (steps, format fixes, clips, voices) lands in its costs.
+    onBrainUsage((tag, res) => {
+      if (!tag || res.costUsd === undefined) return;
+      try {
+        this.update(tag.episodeId, (x) =>
+          x.costs.push({ at: now(), step: tag.step, provider: 'claude-cli', label: tag.label, usd: res.costUsd, tokens: res.tokens, model: res.model, durationMs: res.durationMs }),
+        );
+      } catch {
+        /* the episode was removed meanwhile */
+      }
+    });
     const s = loadSettings();
     this.queue = new WorkQueue(s.concurrency, (q) => ev.queue(q));
     for (const dir of listEpisodeDirs()) {
@@ -483,6 +494,7 @@ export class Pipeline {
             configDir: account?.configDir,
             signal,
             onEvent,
+            usageFor: { episodeId: id, step, label: 'Claude Code' },
           });
 
         let res = await run(prompt, opts.fresh ? undefined : e.brain.sessions[step]);
@@ -496,7 +508,6 @@ export class Pipeline {
         output = res.text;
         this.update(id, (x) => {
           if (res.sessionId) x.brain.sessions[step] = res.sessionId;
-          if (res.costUsd) x.costs.push({ at: now(), step, provider: 'claude-cli', label: 'Claude Code', usd: res.costUsd });
         });
         const problem = res.ok ? this.validate(id, step) : res.error;
         if (problem) this.setStatus(id, step, 'error', { error: problem });
@@ -812,8 +823,8 @@ export class Pipeline {
               configDir: account?.configDir,
               signal,
               onEvent: (b) => this.activity(id, 'videos', b.kind, `${c.sceneId} · ${b.text}`),
+              usageFor: { episodeId: id, step: 'videos', label: `Claude · clip ${c.sceneId}` },
             });
-            if (res.costUsd) this.update(id, (x) => x.costs.push({ at: now(), step: 'videos', provider: 'claude-cli', label: `Claude · clip ${c.sceneId}`, usd: res.costUsd }));
             try {
               if (!res.ok || !res.contentUrl) throw new Error(res.error ?? 'El clip no se generó.');
               archive(c);
@@ -1026,6 +1037,7 @@ export class Pipeline {
         lines: lines.map((l) => ({ id: l.id, text: l.text })),
         signal,
         onEvent: (b) => this.activity(id, 'voice', b.kind, b.text),
+        usageFor: { episodeId: id, step: 'voice', label: 'Claude · voz (HeyGen)' },
       });
       if (r.error) this.activity(id, 'voice', 'error', r.error);
       for (const l of lines) {
