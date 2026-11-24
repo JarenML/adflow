@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, Clapperboard, ExternalLink, ImageIcon, Loader2, Lock, MessageSquare, Plus, Upload, Volume2, VolumeX, Wand2 } from 'lucide-react';
-import type { ClipCandidate, EpisodeState, ProviderInfo, Settings, VideoClipConfig } from '@shared/types';
+import { ArrowRight, ChevronDown, Clapperboard, ExternalLink, Eye, ImageIcon, Loader2, Lock, MessageSquare, Upload, Volume2, VolumeX, Wand2 } from 'lucide-react';
+import type { ClipItem, EpisodeState, ProviderInfo, Settings, VideoClipConfig } from '@shared/types';
 import { api, useLive } from '../lib/api';
 import type { ChatTarget } from '../components/BrainPanel';
 import { Button, Card, cx, Empty, Field, SectionTitle, Select, Tag } from '../components/ui';
 import { billingTag } from './PrepStep';
+import { SceneModal } from '../components/SceneModal';
+import type { Scene } from '@shared/schemas';
 
 const DEFAULT_CFG: VideoClipConfig = { provider: 'manual', model: 'veo-3.1-fast', durationS: 4, resolution: '1080p' };
 
 export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTarget: (t: ChatTarget) => void }) {
   const [clips] = useLive(() => api.clips(episode.id), [episode.id], episode.id);
-  const [candidates] = useLive<ClipCandidate[]>(() => api.clipCandidates(episode.id), [episode.id], episode.id);
+  const [scriptData] = useLive(() => api.script(episode.id), [episode.id, episode.updatedAt], episode.id);
+  const sceneOf = (sceneId: string): Scene | undefined => scriptData?.script?.escenas.find((x) => x.id === sceneId);
+  const [viewing, setViewing] = useState<string>();
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [settings, setSettings] = useState<Settings>();
   const [estimate, setEstimate] = useState('');
@@ -63,40 +67,29 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
     </Card>
   );
 
-  // Real scenes the script left as an image: one click turns them into a clip (and back, on each row).
-  const others = candidates ?? [];
   const busy = st === 'working';
-  const otherImages = others.length > 0 && (
-    <Card className="p-5">
-      <SectionTitle
-        title="Imágenes sin clip"
-        hint="El guion las dejó como imagen con movimiento (acercamiento en el montaje). Si una necesita video real, conviértela en clip: Claude escribe su prompt y se cambia en el guion."
-      />
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3">
-        {others.map((o) => (
-          <div key={o.sceneId} className="overflow-hidden rounded-xl border border-line bg-panel-2/40">
-            <div className="relative aspect-[9/16] w-full bg-[#0a0c11]">
-              {o.imageUrl ? <img src={o.imageUrl} className="absolute inset-0 size-full object-cover" alt="" /> : <ImageIcon className="absolute inset-0 m-auto size-5 text-faint" />}
-              <span className="absolute left-2 top-2 rounded-md bg-black/60 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-white">{o.sceneId}</span>
-            </div>
-            <div className="p-2">
-              <Button
-                size="sm"
-                className="w-full"
-                disabled={busy || st === 'approved'}
-                icon={<Plus className="size-3.5" />}
-                title={o.description}
-                onClick={() => {
-                  if (window.confirm(`¿Convertir ${o.sceneId} en clip de video? Se cambia en el guion y Claude escribe su prompt. Generarlo gasta créditos.`)) void api.act(episode.id, { step: 'videos', type: 'addClip', sceneId: o.sceneId });
-                }}
-              >
-                Convertir en clip
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </Card>
+
+  // The scene open in the detail modal: a clip of the script.
+  const viewClip = viewing ? list.find((c) => c.sceneId === viewing) : undefined;
+  const viewScene = viewing ? sceneOf(viewing) : undefined;
+  const modal = viewing && viewClip && (
+    <SceneModal
+      sceneId={viewing}
+      scene={viewScene}
+      imageUrl={viewClip.imageUrl}
+      videoUrl={viewClip.url}
+      prompt={viewClip.prompt}
+      promptLabel="Prompt del clip"
+      tags={
+        (
+          <Tag tone={viewClip.audio ? 'cyan' : 'default'}>
+            {viewClip.audio ? <Volume2 className="size-3" /> : <VolumeX className="size-3" />}
+            {viewClip.audio ? 'Con diálogo' : 'Sin audio'}
+          </Tag>
+        )
+      }
+      onClose={() => setViewing(undefined)}
+    />
   );
 
   // The script has no clip scenes: nothing to generate, the step can be approved as is.
@@ -107,7 +100,7 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
         <Card className="p-5">
           <SectionTitle
             title="Este guion no lleva clips de video"
-            hint="Todas las escenas reales van como imagen con movimiento en el montaje. Si alguna necesita video, conviértela abajo."
+            hint="Todas las escenas reales van como imagen con movimiento en el montaje."
             right={
               <Button size="sm" variant="primary" icon={<ArrowRight className="size-3.5" />} disabled={st === 'approved'} onClick={() => api.act(episode.id, { step: 'videos', type: 'approve' })}>
                 {st === 'approved' ? 'Aprobado' : 'Aprobar y seguir'}
@@ -115,7 +108,7 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
             }
           />
         </Card>
-        {otherImages}
+        {modal}
       </div>
     );
   }
@@ -127,13 +120,9 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
         {st === 'working' ? (
           <Card className="p-5">
             <SectionTitle title="Claude escribe los prompts de los clips del guion" hint="Las escenas que el guion marcó como clip (el gancho y los diálogos). Aparecen aquí en un momento." />
-            <div className="space-y-4">
-              {[0, 1].map((i) => (
-                <div key={i} className="grid grid-cols-[150px_150px_1fr] gap-4">
-                  <div className="shimmer aspect-[9/16] rounded-xl" />
-                  <div className="shimmer aspect-[9/16] rounded-xl" />
-                  <div className="shimmer h-40 rounded-xl" />
-                </div>
+            <div className="flex gap-3 overflow-hidden">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="shimmer aspect-[9/16] w-[190px] shrink-0 rounded-xl" />
               ))}
             </div>
           </Card>
@@ -165,9 +154,10 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
           hint={`Las escenas que el guion marcó como clip. ${canGenerate ? 'Genera cada una o súbela si la hiciste fuera.' : 'Genera los clips en tu herramienta (prompts en prompts_firefly.md) y súbelos aquí.'}`}
           right={
             <div className="flex gap-2">
-              {canGenerate && (
+              {/* Hidden when every clip exists: an empty list would regenerate them all. */}
+              {canGenerate && ready < list.length && (
                 <Button size="sm" icon={<Wand2 className="size-3.5" />} loading={st === 'working'} disabled={st === 'approved'} onClick={() => api.act(episode.id, { step: 'videos', type: 'generate', sceneIds: list.filter((c) => !c.exists).map((c) => c.sceneId) })}>
-                  Generar los que faltan
+                  {ready === 0 ? 'Generar todos' : `Generar restantes (${list.length - ready})`}
                 </Button>
               )}
               <Button size="sm" variant="primary" icon={<ArrowRight className="size-3.5" />} disabled={st === 'working' || st === 'approved'} onClick={() => api.act(episode.id, { step: 'videos', type: 'approve' })}>
@@ -176,94 +166,147 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
             </div>
           }
         />
-        <div className="space-y-4">
+        <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
           {list.map((c) => (
-            <div key={c.sceneId} className="grid grid-cols-[150px_150px_1fr] gap-4 rounded-2xl border border-line bg-panel-2/40 p-3">
-              {/* The scene image (first frame) */}
-              <div>
-                <p className="mb-1.5 text-[11px] text-faint">Imagen · primer fotograma</p>
-                <div className="relative aspect-[9/16] w-full overflow-hidden rounded-xl bg-[#0a0c11]">
-                  {c.imageUrl ? <img src={c.imageUrl} className="absolute inset-0 size-full object-cover" alt="" /> : <span className="absolute inset-0 grid place-items-center text-[11px] text-faint">Sin imagen</span>}
-                </div>
-              </div>
-              {/* Its clip */}
-              <div>
-                <p className="mb-1.5 text-[11px] text-faint">Clip</p>
-                <div className="relative aspect-[9/16] w-full overflow-hidden rounded-xl bg-[#0a0c11]">
-                  {c.status === 'working' ? (
-                    <div className="shimmer absolute inset-0 grid place-items-center">
-                      <span className="flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-mute">
-                        <Loader2 className="size-3 animate-spin" /> Generando…
-                      </span>
-                    </div>
-                  ) : c.url ? (
-                    <video src={c.url} className="absolute inset-0 size-full object-cover" controls loop />
-                  ) : (
-                    <span className="absolute inset-0 grid place-items-center px-3 text-center text-[11px] text-faint">{c.status === 'error' ? 'No se generó' : 'Sin generar'}</span>
-                  )}
-                </div>
-              </div>
-              {/* Prompt and actions */}
-              <div className="flex min-w-0 flex-col">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="rounded-md bg-black/50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-white">{c.sceneId}</span>
-                  <Tag tone={c.audio ? 'cyan' : 'default'}>
-                    {c.audio ? <Volume2 className="size-3" /> : <VolumeX className="size-3" />}
-                    {c.audio ? 'Con diálogo' : 'Sin audio'}
-                  </Tag>
-                  <Tag>{c.durationS} s</Tag>
-                  {c.status === 'done' && <Tag tone="ok">Listo</Tag>}
-                  {c.status === 'error' && <Tag tone="bad">Error</Tag>}
-                </div>
-                <p className="mt-2 text-[12px] text-mute">{c.reason}</p>
-                <p className="mb-1 mt-2.5 text-[11px] text-faint">Prompt</p>
-                <p className="selectable max-h-48 flex-1 overflow-auto whitespace-pre-wrap rounded-lg bg-[#0a0c11] p-2.5 font-mono text-[10.5px] leading-relaxed text-mute">{c.prompt}</p>
-                {c.status === 'error' && c.error && <p className="selectable mt-2 text-[11.5px] text-bad">{c.error}</p>}
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  <Button
-                    size="sm"
-                    disabled={!canGenerate || c.status === 'working'}
-                    loading={c.status === 'working'}
-                    icon={canGenerate ? <Wand2 className="size-3.5" /> : <Lock className="size-3.5" />}
-                    title={canGenerate ? '' : 'Proveedor bloqueado o manual'}
-                    onClick={() => api.act(episode.id, { step: 'videos', type: 'generate', sceneIds: [c.sceneId] })}
-                  >
-                    {c.exists ? 'Regenerar' : 'Generar'}
-                  </Button>
-                  <Button size="sm" icon={<Upload className="size-3.5" />} onClick={() => api.act(episode.id, { step: 'videos', type: 'import', sceneId: c.sceneId })}>
-                    {c.exists ? 'Reemplazar' : 'Subir clip'}
-                  </Button>
-                  <Button size="sm" variant="ghost" icon={<MessageSquare className="size-3.5" />} onClick={() => onTarget({ sceneId: c.sceneId, label: `clip ${c.sceneId}` })}>
-                    Corregir prompt
-                  </Button>
-                  {c.flowUrl && (
-                    <Button size="sm" variant="ghost" icon={<ExternalLink className="size-3.5" />} onClick={() => api.openPath(c.flowUrl!)}>
-                      Abrir en ElevenLabs
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    icon={<ImageIcon className="size-3.5" />}
-                    disabled={c.status === 'working' || busy || st === 'approved'}
-                    title="La escena vuelve a ser imagen con movimiento (se cambia en el guion)"
-                    onClick={() => {
-                      if (window.confirm(`¿Quitar el clip de ${c.sceneId}? La escena vuelve a ser imagen con movimiento en el guion.`)) void api.act(episode.id, { step: 'videos', type: 'removeClip', sceneId: c.sceneId });
-                    }}
-                  >
-                    Quitar clip
-                  </Button>
-                </div>
-              </div>
-            </div>
+            <ClipCard
+              key={c.sceneId}
+              c={c}
+              onView={() => setViewing(c.sceneId)}
+              canGenerate={canGenerate}
+              locked={busy || st === 'approved'}
+              onGenerate={() => api.act(episode.id, { step: 'videos', type: 'generate', sceneIds: [c.sceneId] })}
+              onImport={() => api.act(episode.id, { step: 'videos', type: 'import', sceneId: c.sceneId })}
+              onAsk={() => onTarget({ sceneId: c.sceneId, label: `clip ${c.sceneId}` })}
+              onRemove={() => {
+                if (window.confirm(`¿Quitar el clip de ${c.sceneId}? La escena vuelve a ser imagen con movimiento en el guion.`)) void api.act(episode.id, { step: 'videos', type: 'removeClip', sceneId: c.sceneId });
+              }}
+            />
           ))}
         </div>
       </Card>
-      {otherImages}
+      {modal}
       <p className={cx('text-[11.5px] text-faint')}>
         {episode.steps.videos.error && <span className="mr-2 text-bad">{episode.steps.videos.error}.</span>}
         La verificación automática de clips (hoja de cuadros y transcripción) llega en la siguiente fase.
       </p>
     </div>
+  );
+}
+
+/** One clip of the script, as a card of the carousel: the clip (or its first frame), its tags and actions. */
+function ClipCard({
+  c,
+  canGenerate,
+  locked,
+  onGenerate,
+  onImport,
+  onAsk,
+  onRemove,
+  onView,
+}: {
+  c: ClipItem;
+  onView: () => void;
+  canGenerate: boolean;
+  locked: boolean;
+  onGenerate: () => void;
+  onImport: () => void;
+  onAsk: () => void;
+  onRemove: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const working = c.status === 'working';
+  const iconBtn = 'w-8 px-0';
+  return (
+    <div className="w-[190px] shrink-0 overflow-hidden rounded-xl border border-line bg-panel-2/40">
+      <div className="relative aspect-[9/16] w-full bg-[#0a0c11]">
+        {c.url && !working ? (
+          <video src={c.url} poster={c.imageUrl} className="absolute inset-0 size-full object-cover" controls loop />
+        ) : c.imageUrl ? (
+          <img src={c.imageUrl} className={cx('absolute inset-0 size-full object-cover', !working && 'opacity-60')} alt="" />
+        ) : (
+          <ImageIcon className="absolute inset-0 m-auto size-5 text-faint" />
+        )}
+        {working ? (
+          <div className="shimmer absolute inset-0 grid place-items-center">
+            <span className="flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-mute">
+              <Loader2 className="size-3 animate-spin" /> Generando…
+            </span>
+          </div>
+        ) : (
+          !c.url && (
+            <span className="absolute inset-x-0 bottom-3 mx-auto w-fit rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-mute">
+              {c.status === 'error' ? 'No se generó' : 'Sin generar'}
+            </span>
+          )
+        )}
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-1 bg-gradient-to-b from-black/70 to-transparent p-2">
+          <span className="rounded-md bg-black/60 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-white">{c.sceneId}</span>
+          <span title={c.audio ? 'Con diálogo' : 'Sin audio'} className="rounded-md bg-black/60 p-1 text-white/80">
+            {c.audio ? <Volume2 className="size-3" /> : <VolumeX className="size-3" />}
+          </span>
+          <span className="rounded-md bg-black/60 px-1.5 py-0.5 text-[11px] text-white/80">{c.durationS} s</span>
+          <span className="ml-auto">
+            {c.status === 'done' && <Tag tone="ok">Listo</Tag>}
+            {c.status === 'error' && <Tag tone="bad">Error</Tag>}
+          </span>
+          <EyeButton onClick={onView} inline />
+        </div>
+      </div>
+      <div className="space-y-2 p-2">
+        <Button
+          size="sm"
+          className="w-full"
+          disabled={!canGenerate || working}
+          loading={working}
+          icon={canGenerate ? <Wand2 className="size-3.5" /> : <Lock className="size-3.5" />}
+          title={canGenerate ? '' : 'Proveedor bloqueado o manual'}
+          onClick={onGenerate}
+        >
+          {c.exists ? 'Regenerar' : 'Generar'}
+        </Button>
+        <div className="flex items-center gap-1">
+          <Button size="sm" variant="ghost" className={iconBtn} icon={<Upload className="size-3.5" />} title={c.exists ? 'Reemplazar con un clip tuyo' : 'Subir un clip hecho fuera'} aria-label="Subir clip" onClick={onImport} />
+          <Button size="sm" variant="ghost" className={iconBtn} icon={<MessageSquare className="size-3.5" />} title="Corregir el prompt con Claude" aria-label="Corregir prompt" onClick={onAsk} />
+          {c.flowUrl && <Button size="sm" variant="ghost" className={iconBtn} icon={<ExternalLink className="size-3.5" />} title="Abrir en ElevenLabs" aria-label="Abrir en ElevenLabs" onClick={() => api.openPath(c.flowUrl!)} />}
+          <Button
+            size="sm"
+            variant="ghost"
+            className={iconBtn}
+            icon={<ImageIcon className="size-3.5" />}
+            disabled={working || locked}
+            title="Quitar el clip: la escena vuelve a ser imagen con movimiento (se cambia en el guion)"
+            aria-label="Quitar clip"
+            onClick={onRemove}
+          />
+          <button className="no-drag ml-auto p-1 text-faint hover:text-ink" onClick={() => setOpen(!open)} aria-label="Ver prompt" title="Ver motivo y prompt">
+            <ChevronDown className={cx('size-4 transition-transform', open && 'rotate-180')} />
+          </button>
+        </div>
+        {c.status === 'error' && c.error && <p className="selectable line-clamp-4 text-[11px] text-bad" title={c.error}>{c.error}</p>}
+        {open && (
+          <div className="space-y-1.5">
+            {c.reason && <p className="text-[11.5px] text-mute">{c.reason}</p>}
+            <p className="selectable max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-[#0a0c11] p-2 font-mono text-[10px] leading-relaxed text-mute">{c.prompt}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Opens the scene's detail (image, script and prompt). */
+function EyeButton({ onClick, inline }: { onClick: () => void; inline?: boolean }) {
+  return (
+    <button
+      className={cx(
+        'no-drag pointer-events-auto rounded-md bg-black/60 p-1 text-white/85 backdrop-blur-sm hover:bg-black/80 hover:text-white',
+        !inline && 'absolute right-2 top-2 z-10',
+      )}
+      onClick={onClick}
+      title="Ver la escena y su prompt"
+      aria-label="Ver la escena"
+    >
+      <Eye className="size-3.5" />
+    </button>
   );
 }

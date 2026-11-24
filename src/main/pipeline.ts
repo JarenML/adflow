@@ -274,6 +274,25 @@ export class Pipeline {
       case 'cancel':
         return this.queue.cancel(id, a.step);
     }
+    // A message to Claude on an approved step keeps it approved (and where the episode was): it runs
+    // as working, and if it ends fine the approval comes back instead of «Esperando por ti».
+    if (a.type === 'feedback' && this.get(id).steps[a.step].status === 'approved') {
+      const current = this.get(id).current;
+      const res = await this.run(id, a);
+      if (this.get(id).steps[a.step].status === 'review') {
+        this.update(id, (e) => {
+          e.steps[a.step] = { ...e.steps[a.step], status: 'approved', updatedAt: now(), error: undefined };
+          e.current = current;
+        });
+        if (a.step === 'script') void this.shareScript(id);
+      }
+      return res;
+    }
+    return this.run(id, a);
+  }
+
+  /** Every action except approve, reopen and cancel. */
+  private async run(id: string, a: PipelineAction): Promise<unknown> {
     if (a.step === 'script') {
       if (a.type === 'generate') return this.brainStep(id, 'script', P.scriptPrompt(this.get(id).title, this.get(id).closingVoice), { fresh: true });
       if (a.type === 'regenerate') {

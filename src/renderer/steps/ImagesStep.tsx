@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, ChevronDown, CircleAlert, Clapperboard, ImageIcon, MessageSquare, RefreshCw, Wand2 } from 'lucide-react';
+import { ArrowRight, ChevronDown, CircleAlert, Clapperboard, Eye, ImageIcon, MessageSquare, RefreshCw, Wand2 } from 'lucide-react';
 import type { EpisodeState, ImageItem } from '@shared/types';
 import { api, useLive } from '../lib/api';
 import type { ChatTarget } from '../components/BrainPanel';
 import { Button, Card, cx, Empty, SectionTitle, Tag } from '../components/ui';
+import { SceneModal } from '../components/SceneModal';
 
-function ImageCard({ img, episode, onAsk, active }: { img: ImageItem; episode: EpisodeState; onAsk: () => void; active: boolean }) {
+function ImageCard({ img, episode, onAsk, onView, active }: { img: ImageItem; episode: EpisodeState; onAsk: () => void; onView: () => void; active: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <motion.div layout initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} className={cx('overflow-hidden rounded-2xl border bg-panel', active ? 'border-brand/60 glow' : 'border-line')}>
@@ -34,9 +35,19 @@ function ImageCard({ img, episode, onAsk, active }: { img: ImageItem; episode: E
               </span>
             )}
           </span>
-          {img.status === 'done' && <Tag tone="ok">Lista</Tag>}
-          {img.status === 'error' && <Tag tone="bad">Error</Tag>}
-          {img.status === 'pending' && <Tag>Pendiente</Tag>}
+          <span className="flex items-center gap-1.5">
+            {img.status === 'done' && <Tag tone="ok">Lista</Tag>}
+            {img.status === 'error' && <Tag tone="bad">Error</Tag>}
+            {img.status === 'pending' && <Tag>Pendiente</Tag>}
+            <button
+              className="no-drag rounded-md bg-black/60 p-1 text-white/85 backdrop-blur-sm hover:bg-black/80 hover:text-white"
+              onClick={onView}
+              title="Ver la escena y su prompt"
+              aria-label="Ver la escena"
+            >
+              <Eye className="size-3.5" />
+            </button>
+          </span>
         </div>
         {img.narration && (
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-3 pt-10">
@@ -47,14 +58,14 @@ function ImageCard({ img, episode, onAsk, active }: { img: ImageItem; episode: E
       <div className="space-y-2 p-3">
         {img.description && <p className="line-clamp-2 text-[12px] text-mute">{img.description}</p>}
         {img.error && <p className="text-[11px] text-bad">{img.error}</p>}
-        <div className="flex gap-1.5">
-          <Button size="sm" variant="ghost" icon={<MessageSquare className="size-3.5" />} onClick={onAsk}>
+        <div className="flex items-center gap-1">
+          <Button size="sm" variant="ghost" className="min-w-0 flex-1 px-2" icon={<MessageSquare className="size-3.5" />} onClick={onAsk}>
             Corregir
           </Button>
-          <Button size="sm" variant="ghost" icon={<RefreshCw className="size-3.5" />} disabled={img.status === 'working'} onClick={() => api.act(episode.id, { step: 'images', type: 'generate', sceneIds: [img.sceneId] })}>
+          <Button size="sm" variant="ghost" className="min-w-0 flex-1 px-2" icon={<RefreshCw className="size-3.5" />} title="Generar otra versión de esta imagen" disabled={img.status === 'working'} onClick={() => api.act(episode.id, { step: 'images', type: 'generate', sceneIds: [img.sceneId] })}>
             Otra
           </Button>
-          <button className="no-drag ml-auto text-faint hover:text-ink" onClick={() => setOpen(!open)} aria-label="Ver prompt">
+          <button className="no-drag shrink-0 p-1 text-faint hover:text-ink" onClick={() => setOpen(!open)} aria-label="Ver prompt">
             <ChevronDown className={cx('size-4 transition-transform', open && 'rotate-180')} />
           </button>
         </div>
@@ -71,6 +82,8 @@ function ImageCard({ img, episode, onAsk, active }: { img: ImageItem; episode: E
 
 export function ImagesStep({ episode, onTarget, target }: { episode: EpisodeState; onTarget: (t: ChatTarget) => void; target?: ChatTarget }) {
   const [images] = useLive(() => api.images(episode.id), [episode.id], episode.id);
+  const [scriptData] = useLive(() => api.script(episode.id), [episode.id, episode.updatedAt], episode.id);
+  const [viewing, setViewing] = useState<string>();
   const [estimate, setEstimate] = useState('');
   const st = episode.steps.images.status;
   const list = images ?? [];
@@ -80,7 +93,7 @@ export function ImagesStep({ episode, onTarget, target }: { episode: EpisodeStat
 
   if (!list.length) {
     return st === 'working' ? (
-      <div className="grid grid-cols-3 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
         {[0, 1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="shimmer aspect-[9/16] rounded-2xl" />
         ))}
@@ -99,6 +112,7 @@ export function ImagesStep({ episode, onTarget, target }: { episode: EpisodeStat
     );
   }
 
+  const viewImg = viewing ? list.find((i) => i.sceneId === viewing) : undefined;
   const done = list.filter((i) => i.status === 'done').length;
   const pending = list.filter((i) => i.status !== 'done' && i.status !== 'working').length;
   return (
@@ -124,11 +138,36 @@ export function ImagesStep({ episode, onTarget, target }: { episode: EpisodeStat
           <motion.div className="h-full brand-gradient" animate={{ width: `${(done / list.length) * 100}%` }} />
         </div>
       </Card>
-      <div className="grid grid-cols-3 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
         {[...list].sort((a, b) => a.sceneId.localeCompare(b.sceneId, undefined, { numeric: true })).map((img) => (
-          <ImageCard key={img.sceneId} img={img} episode={episode} active={target?.sceneId === img.sceneId} onAsk={() => onTarget({ sceneId: img.sceneId, label: `imagen ${img.sceneId}` })} />
+          <ImageCard key={img.sceneId} img={img} episode={episode} onView={() => setViewing(img.sceneId)} active={target?.sceneId === img.sceneId} onAsk={() => onTarget({ sceneId: img.sceneId, label: `imagen ${img.sceneId}` })} />
         ))}
       </div>
+      {viewImg && (
+        <SceneModal
+          sceneId={viewImg.sceneId}
+          scene={scriptData?.script?.escenas.find((x) => x.id === viewImg.sceneId)}
+          imageUrl={viewImg.status !== 'working' ? viewImg.url : undefined}
+          prompt={viewImg.prompt}
+          promptLabel="Prompt de la imagen"
+          tags={
+            viewImg.clip && (
+              <Tag tone="cyan">
+                <Clapperboard className="size-3" /> Clip
+              </Tag>
+            )
+          }
+          extra={
+            viewImg.references.length > 0 && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">Referencias</p>
+                <p className="selectable mt-1 font-mono text-[12px] text-mute">{viewImg.references.join(', ')}</p>
+              </div>
+            )
+          }
+          onClose={() => setViewing(undefined)}
+        />
+      )}
     </div>
   );
 }
