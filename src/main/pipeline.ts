@@ -45,6 +45,7 @@ import { downloadClip, mcpClip } from './providers/elevenlabsMcp';
 import { heygenSpeech } from './providers/heygenMcp';
 import { synthesize } from './providers/voices';
 import { WorkQueue } from './queue';
+import { isStale, needsTake, parseTakes, TAKES_FILE, type TakeRecord } from '@shared/voiceTakes';
 import {
   activePlaybook,
   listEpisodeDirs,
@@ -265,6 +266,10 @@ export class Pipeline {
   async act(id: string, a: PipelineAction): Promise<unknown> {
     switch (a.type) {
       case 'approve':
+        if (a.step === 'voice') {
+          const pending = this.narration(id).filter(needsTake);
+          if (pending.length) return void this.setStatus(id, 'voice', 'error', { error: voiceProblem(pending) });
+        }
         return void this.approve(id, a.step);
       case 'reopen':
         return void this.update(id, (e) => {
@@ -926,6 +931,9 @@ export class Pipeline {
       log(error, 'error');
       this.setStatus(id, 'render', 'error', { error: error.split(/\r?\n/)[0].slice(0, 300) });
     };
+    // An old take (the script changed after it) or a missing one never reaches the video.
+    const pending = this.narration(id).filter(needsTake);
+    if (pending.length) return fail(`${voiceProblem(pending)} Vuelve a Voz del narrador antes de renderizar.`);
     this.setStatus(id, 'render', 'working', { error: undefined });
 
     // 1. The project, with the episode's latest images, clips and voices.
@@ -998,6 +1006,7 @@ export class Pipeline {
   narration(id: string): NarrationLine[] {
     const e = this.get(id);
     const scenes = this.script(id).script?.escenas ?? [];
+    const takes = this.readTakes(id);
     const lines: NarrationLine[] = [];
     let n = 0;
     for (const s of scenes) {
@@ -1008,9 +1017,33 @@ export class Pipeline {
       n++;
       const lineId = `n${String(n).padStart(2, '0')}`;
       const file = ['wav', 'mp3'].map((ext) => path.join(e.dir, 'voces', `${lineId}.${ext}`)).find((f) => fs.existsSync(f));
-      lines.push({ id: lineId, sceneId: s.id, who: l.who, tone: l.tone, text: l.text, file, url: file ? fileUrl(file) : undefined });
+      const stale = isStale(l.text, !!file, takes[lineId]);
+      lines.push({
+        id: lineId,
+        sceneId: s.id,
+        who: l.who,
+        tone: l.tone,
+        text: l.text,
+        file,
+        url: file ? fileUrl(file) : undefined,
+        ...(stale ? { stale, recordedText: takes[lineId] } : {}),
+      });
     }
     return lines;
+  }
+
+  /** What each take says (`voces/textos.json`), to notice when the script changed after it. */
+  private readTakes(id: string): TakeRecord {
+    const f = path.join(this.get(id).dir, 'voces', TAKES_FILE);
+    return parseTakes(fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : null);
+  }
+
+  /** Records the text a new take says. */
+  private recordTake(id: string, lineId: string, text: string): void {
+    const dir = path.join(this.get(id).dir, 'voces');
+    fs.mkdirSync(dir, { recursive: true });
+    const takes = { ...this.readTakes(id), [lineId]: text };
+    fs.writeFileSync(path.join(dir, TAKES_FILE), `${JSON.stringify(takes, null, 2)}\n`);
   }
 
   async previewVoice(id: string, text: string): Promise<{ url?: string; error?: string }> {
@@ -1072,6 +1105,7 @@ export class Pipeline {
           // A new take replaces the old one in either format.
           for (const ext of ['wav', 'mp3']) fs.rmSync(path.join(e.dir, 'voces', `${l.id}.${ext}`), { force: true });
           fs.renameSync(file, path.join(e.dir, 'voces', `${l.id}.mp3`));
+          this.recordTake(id, l.id, l.text);
         } else {
           failed++;
           this.activity(id, 'voice', 'error', `${l.id}: ${r.errors[l.id] ?? 'sin audio'}`);
@@ -1090,8 +1124,8 @@ export class Pipeline {
       this.setStatus(id, 'voice', 'error', { error: `Límite de ${limit} crédito(s) premium de HeyGen: se detuvo antes de ${stoppedAt}. Sube el límite o genera las que faltan.` });
       return;
     }
-    const missing = this.narration(id).filter((l) => !l.file).length;
-    this.setStatus(id, 'voice', missing ? 'error' : 'review', missing ? { error: `${missing} frase(s) sin audio` } : {});
+    const missing = this.narration(id).filter(needsTake).length;
+    this.setStatus(id, 'voice', missing ? 'error' : 'review', missing ? { error: `${missing} frase(s) sin audio o con el texto cambiado` } : {});
   }
 
   private async generateVoices(id: string, lineIds?: string[]): Promise<void> {
@@ -1138,7 +1172,8 @@ export class Pipeline {
           for (const ext of ['wav', 'mp3']) fs.rmSync(path.join(e.dir, 'voces', `${l.id}.${ext}`), { force: true });
           if (paid) spent += lineCredits(l.text);
           const res = await synthesize(e.voice!.provider, e.voice!.voiceId, l.text, path.join(e.dir, 'voces', `${l.id}.wav`), keys());
-          if (!res.ok) this.activity(id, 'voice', 'error', `${l.id}: ${res.error}`);
+          if (res.ok) this.recordTake(id, l.id, l.text);
+          else this.activity(id, 'voice', 'error', `${l.id}: ${res.error}`);
         }),
       ),
     );
@@ -1148,11 +1183,23 @@ export class Pipeline {
       this.activity(id, 'voice', 'result', `Gastado en esta ejecución: ≈ ${spent.toLocaleString('es-PE')} créditos${real !== null ? ` (ElevenLabs registra ${real.toLocaleString('es-PE')})` : ''} de un límite de ${limit.toLocaleString('es-PE')}.`);
       this.update(id, (x) => x.costs.push({ at: now(), step: 'voice', provider: 'elevenlabs', label: `Voz del narrador · ${real ?? spent} créditos` }));
     }
-    const missing = this.narration(id).filter((l) => !l.file).length;
+    const missing = this.narration(id).filter(needsTake).length;
     if (stoppedAt) {
       this.setStatus(id, 'voice', 'error', { error: `Límite de ${limit.toLocaleString('es-PE')} créditos: se detuvo en ${stoppedAt}. Sube el límite o genera de nuevo para completar.` });
       return;
     }
-    this.setStatus(id, 'voice', missing ? 'error' : 'review', missing ? { error: `${missing} frase(s) sin audio` } : {});
+    this.setStatus(id, 'voice', missing ? 'error' : 'review', missing ? { error: `${missing} frase(s) sin audio o con el texto cambiado` } : {});
   }
+}
+
+/** The voice lines that stop an approval or a render, in a sentence. */
+function voiceProblem(lines: NarrationLine[]): string {
+  const changed = lines.filter((l) => l.stale).map((l) => l.id);
+  const missing = lines.filter((l) => !l.file).map((l) => l.id);
+  return [
+    changed.length && `El texto cambió en el guion: ${changed.join(', ')} (genera de nuevo su audio).`,
+    missing.length && `Sin audio: ${missing.join(', ')}.`,
+  ]
+    .filter(Boolean)
+    .join(' ');
 }

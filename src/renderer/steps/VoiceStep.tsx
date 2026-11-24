@@ -6,6 +6,7 @@ import { languageOptions, matchesVoice, voiceIdFromQuery, type GenderFilter } fr
 import { api, useLive } from '../lib/api';
 import { Button, Card, cx, Empty, Field, inputCls, SectionTitle, Select, Tag } from '../components/ui';
 import { billingTag } from './PrepStep';
+import { needsTake } from '@shared/voiceTakes';
 
 const cleanError = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 const fmt = (n: number) => n.toLocaleString('es-PE');
@@ -72,7 +73,9 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
   const limit = heygen ? (episode.heygenCreditLimit ?? DEFAULT_HEYGEN_CREDIT_LIMIT) : (episode.voiceCreditLimit ?? DEFAULT_VOICE_CREDIT_LIMIT);
   const [limitDraft, setLimitDraft] = useState(String(limit));
   useEffect(() => setLimitDraft(String(limit)), [limit]);
-  const missingLines = list.filter((l) => !l.url);
+  // A line whose text changed in the script after its take counts as missing: its audio says something else.
+  const missingLines = list.filter(needsTake);
+  const changedLines = list.filter((l) => l.stale);
   const generated = list.length - missingLines.length;
   const planAll = planVoiceRun(list.map((l) => l.text), limit);
   const planMissing = planVoiceRun(missingLines.map((l) => l.text), limit);
@@ -438,6 +441,12 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
               <Tag tone={generated === list.length ? 'ok' : 'default'}>
                 {generated} de {list.length} frases
               </Tag>
+              {changedLines.length > 0 && (
+                <Tag tone="warn">
+                  <CircleAlert className="size-3" />
+                  {changedLines.length} con el texto cambiado
+                </Tag>
+              )}
               <Button size="sm" icon={playingAll !== null ? <Pause className="size-3.5" /> : <Play className="size-3.5" />} disabled={!generated} onClick={() => playAll()}>
                 Escuchar todo
               </Button>
@@ -452,8 +461,8 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
               <div
                 key={l.id}
                 className={cx(
-                  'grid grid-cols-[44px_minmax(0,1fr)_minmax(180px,240px)] items-center gap-3 rounded-xl border px-3.5 py-2.5',
-                  playing ? 'border-brand/50 bg-brand/5' : 'border-line bg-panel-2/30',
+                  'grid grid-cols-[44px_minmax(0,1fr)_minmax(180px,240px)_auto] items-center gap-3 rounded-xl border px-3.5 py-2.5',
+                  playing ? 'border-brand/50 bg-brand/5' : l.stale ? 'border-warn/40 bg-warn/5' : 'border-line bg-panel-2/30',
                 )}
               >
                 <span className="font-mono text-[12px] font-semibold text-mute">{l.id}</span>
@@ -464,9 +473,32 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
                     {l.tone && <span className="font-mono text-[#b6a5ff]">{l.tone}</span>}
                     {paid && <span>≈ {fmt(lineCredits(l.text))} créditos</span>}
                     {heygen && <span>{fmt(l.text.length)} caracteres</span>}
+                    {l.stale && (
+                      <Tag tone="warn">
+                        <CircleAlert className="size-3" />
+                        El texto cambió
+                      </Tag>
+                    )}
                   </p>
+                  {l.stale && l.recordedText && (
+                    <p className="selectable mt-1 text-[11.5px] text-warn/90">El audio todavía dice: «{l.recordedText}»</p>
+                  )}
                 </div>
                 {l.url ? <audio src={l.url} controls className="h-8 w-full" /> : <span className="justify-self-start"><Tag>Sin audio</Tag></span>}
+                <Button
+                  size="sm"
+                  variant={l.stale ? 'primary' : 'ghost'}
+                  icon={l.url ? <RefreshCw className="size-3.5" /> : <Wand2 className="size-3.5" />}
+                  disabled={!episode.voice || !usable || st === 'working'}
+                  title={
+                    !episode.voice
+                      ? 'Elige una voz primero'
+                      : `Genera solo ${l.id}${paid ? ` (≈ ${fmt(lineCredits(l.text))} créditos)` : heygen ? ` (${fmt(l.text.length)} caracteres ≈ ${hgCredits(l.text.length)} crédito)` : ''}`
+                  }
+                  onClick={() => api.act(episode.id, { step: 'voice', type: 'generate', lineIds: [l.id] })}
+                >
+                  {l.url ? 'Regenerar esta' : 'Generar'}
+                </Button>
               </div>
             );
           })}
@@ -482,7 +514,8 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
               disabled={!episode.voice || !usable}
               onClick={() => api.act(episode.id, { step: 'voice', type: 'generate', lineIds: missingLines.map((l) => l.id) })}
             >
-              Generar las que faltan{paid ? ` (≈ ${fmt(planMissing.total)})` : ''}
+              {changedLines.length ? 'Generar las que faltan o cambiaron' : 'Generar las que faltan'}
+              {paid ? ` (≈ ${fmt(planMissing.total)})` : ''}
             </Button>
           )}
           <Button

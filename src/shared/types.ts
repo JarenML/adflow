@@ -304,6 +304,10 @@ export interface NarrationLine {
   file?: string;
   url?: string;
   durationS?: number;
+  /** The audio says another text (the script changed after it was generated): it needs a new take. */
+  stale?: boolean;
+  /** What the audio says, when it is stale. */
+  recordedText?: string;
 }
 
 export interface VoiceOption {
