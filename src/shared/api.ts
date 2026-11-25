@@ -23,6 +23,15 @@ import type { Script, ScriptCheck } from './schemas';
 /** An update downloaded and installed when AdFlow closes (or now, with restartToUpdate). */
 export interface UpdateState {
   readyVersion: string | null;
+  /** dev: running from source, there is nothing to update. */
+  status: 'dev' | 'idle' | 'checking' | 'latest' | 'downloading' | 'ready' | 'error';
+  /** The version being downloaded (status 'downloading'). */
+  downloadingVersion?: string;
+  /** 0–100 while downloading. */
+  progress?: number;
+  /** When the last check finished (ISO). */
+  checkedAt?: string;
+  error?: string;
 }
 
 /** One usage limit of the Claude account, as Claude Code reports it. */
@@ -47,6 +56,15 @@ export interface AppInfo extends UpdateState {
   version: string;
   /** False when running from source (npm run dev): the patch number is only set by the release workflow. */
   packaged: boolean;
+  electron: string;
+  chrome: string;
+  node: string;
+  /** e.g. "win32 x64" */
+  platform: string;
+  /** AdFlow's data folder (settings, logs, caches). */
+  dataDir: string;
+  /** GitHub releases page the updates come from. */
+  releasesUrl: string;
 }
 
 export interface AdflowApi {
@@ -105,6 +123,8 @@ export interface AdflowApi {
   appInfo(): Promise<AppInfo>;
   /** Closes AdFlow, installs the downloaded update and opens the new version. */
   restartToUpdate(): Promise<void>;
+  /** Looks for a new version now (it is also checked every 30 minutes); progress arrives as 'update' events. */
+  checkForUpdates(): Promise<UpdateState>;
   /** The Claude account's usage limits, as last reported by Claude Code. */
   claudeUsage(): Promise<ClaudeUsage>;
 
@@ -157,5 +177,6 @@ export const API_METHODS = [
   'defaults',
   'appInfo',
   'restartToUpdate',
+  'checkForUpdates',
   'claudeUsage',
 ] as const;

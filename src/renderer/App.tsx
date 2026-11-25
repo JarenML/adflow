@@ -22,6 +22,8 @@ function initialRoute(): Route {
   }
   if (h.startsWith('create:')) return { view: 'create', pick: h.slice(7) };
   if (h === 'jobs' || h === 'library' || h === 'settings') return { view: h };
+  if (h.startsWith('settings:')) return { view: 'settings' }; // the tab is read by SettingsView
+
   return { view: 'create' };
 }
 

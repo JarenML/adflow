@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
-import { BookOpen, Brain, CheckCircle2, CircleAlert, CircleDashed, FolderOpen, Gauge, KeyRound, Plug, Plus, RefreshCw, Stethoscope, Trash2 } from 'lucide-react';
+import { BookOpen, Brain, CheckCircle2, CircleAlert, CircleDashed, FolderOpen, Gauge, Info, KeyRound, Plug, Plus, RefreshCw, Stethoscope, Trash2 } from 'lucide-react';
 import { MAX_RENDERS } from '@shared/types';
 import type { Capability, DiagnosticItem, PlaybookSyncStatus, ProviderInfo, Settings } from '@shared/types';
 import { api } from '../lib/api';
 import { Button, Card, cx, Field, inputCls, SectionTitle, Select, Tag } from '../components/ui';
 import { billingTag } from '../steps/PrepStep';
+import { AboutTab } from './AboutTab';
 
-type Tab = 'playbook' | 'brain' | 'providers' | 'queue' | 'diagnostics';
+type Tab = 'playbook' | 'brain' | 'providers' | 'queue' | 'diagnostics' | 'about';
 
 const CAP_LABEL: Record<Capability, string> = { brain: 'Cerebro', image: 'Imágenes', video: 'Videos', voice: 'Voz', music: 'Música' };
 
 export function SettingsView() {
-  const [tab, setTab] = useState<Tab>('playbook');
+  // settings:<tab> in the URL hash opens that tab (used by screenshot checks).
+  const [tab, setTab] = useState<Tab>(() => (location.hash.match(/^#settings:(\w+)/)?.[1] as Tab | undefined) ?? 'playbook');
   const [s, setS] = useState<Settings>();
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [secrets, setSecrets] = useState<Record<string, boolean>>({});
@@ -68,6 +70,7 @@ export function SettingsView() {
     ['providers', 'Proveedores', Plug],
     ['queue', 'Cola y lotes', Gauge],
     ['diagnostics', 'Diagnóstico', Stethoscope],
+    ['about', 'AdFlow', Info],
   ];
 
   return (
@@ -408,6 +411,8 @@ export function SettingsView() {
             </div>
           </Card>
         )}
+
+        {tab === 'about' && <AboutTab />}
       </div>
       </div>
     </div>
