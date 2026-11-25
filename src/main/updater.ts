@@ -1,6 +1,6 @@
 // Automatic updates from GitHub Releases: every push to main publishes a new version
 // (.github/workflows/release.yml); installed copies download it in the background and install it on quit,
-// or right away when the person clicks «Reiniciar ahora» in the sidebar or in Ajustes → AdFlow.
+// or right away when the person clicks «Reiniciar ahora» in the sidebar or in Ajustes → Acerca de.
 // What happened is written to updater.log in AdFlow's data folder.
 import { app } from 'electron';
 import { autoUpdater } from 'electron-updater';

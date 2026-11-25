@@ -70,7 +70,7 @@ export function SettingsView() {
     ['providers', 'Proveedores', Plug],
     ['queue', 'Cola y lotes', Gauge],
     ['diagnostics', 'Diagnóstico', Stethoscope],
-    ['about', 'AdFlow', Info],
+    ['about', 'Acerca de', Info],
   ];
 
   return (

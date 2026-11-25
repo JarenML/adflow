@@ -1,4 +1,4 @@
-// Ajustes → AdFlow: which version is running, its updates, and the technical details useful for support.
+// Ajustes → Acerca de: which version is running, its updates, and the technical details useful for support.
 import { useEffect, useState } from 'react';
 import { CheckCircle2, CircleAlert, Download, ExternalLink, FileText, FolderOpen, RefreshCw, RotateCcw } from 'lucide-react';
 import type { AppInfo, UpdateState } from '@shared/api';
