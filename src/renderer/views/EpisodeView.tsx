@@ -153,7 +153,7 @@ export function EpisodeView({ id, initialStep, onBack }: { id: string; initialSt
             <div
               role="separator"
               aria-orientation="vertical"
-              title="Arrastra para cambiar el ancho · doble clic: ancho normal"
+              title="Arrastra para ajustar el ancho · Doble clic para restablecerlo"
               className="no-drag group absolute inset-y-0 -left-1.5 z-10 w-3 cursor-col-resize"
               onPointerDown={chat.startDrag}
               onDoubleClick={() => chat.setWidth(CHAT_DEFAULT)}

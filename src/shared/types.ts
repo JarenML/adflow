@@ -3,7 +3,7 @@
 export const STEPS = [
   { id: 'prep', label: 'Preparación', hint: 'Episodio, datos y conexiones' },
   { id: 'script', label: 'Guion', hint: 'Escenas, locución y transiciones' },
-  { id: 'images', label: 'Imágenes', hint: 'Un cuadro por escena real' },
+  { id: 'images', label: 'Imágenes', hint: 'Una imagen por escena' },
   { id: 'videos', label: 'Videos', hint: 'Clips del gancho y los diálogos' },
   { id: 'voice', label: 'Voz del narrador', hint: 'Voz, tomas y narración completa' },
   { id: 'render', label: 'Render final', hint: 'Montaje, mezcla y control de calidad' },

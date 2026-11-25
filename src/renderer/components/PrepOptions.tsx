@@ -9,7 +9,7 @@ export const CAPS: { id: Capability; label: string; icon: typeof Brain; hint: st
   { id: 'image', label: 'Imágenes', icon: ImageIcon, hint: 'Un cuadro realista por escena' },
   { id: 'video', label: 'Videos', icon: Clapperboard, hint: 'Clips del gancho y los diálogos' },
   { id: 'voice', label: 'Voz del narrador', icon: Mic, hint: 'Narración con tiempos por palabra' },
-  { id: 'music', label: 'Música', icon: Music, hint: 'Pista calzada a la línea de tiempo' },
+  { id: 'music', label: 'Música', icon: Music, hint: 'Pista sincronizada con la línea de tiempo' },
 ];
 
 export function billingTag(p: ProviderInfo, allowPaid: boolean) {
@@ -53,7 +53,7 @@ export function PrepOptions({
   return (
     <>
       <Card className="p-5">
-        <SectionTitle title="Conexiones" hint="Quién hace cada parte. Vienen de tus valores por defecto (Ajustes); los proveedores con créditos están bloqueados hasta que los habilites." />
+        <SectionTitle title="Conexiones" hint="Proveedor de cada parte del video. Se toman de los valores predeterminados de Ajustes; los que consumen créditos deben habilitarse allí." />
         <div className="space-y-2.5">
           {CAPS.map((cap) => {
             const opts = providers.filter((p) => p.capability === cap.id);
@@ -91,7 +91,7 @@ export function PrepOptions({
       </Card>
 
       <Card className="p-5">
-        <SectionTitle title="Cerebro" hint="Claude Code corre en tu computadora con la cuenta elegida." />
+        <SectionTitle title="Cerebro" hint="Claude Code se ejecuta en tu computadora con la cuenta seleccionada." />
         <div className="grid grid-cols-3 gap-4">
           <Field label="Cuenta de Claude">
             <Select value={value.account} onChange={(v) => onChange({ account: v })} options={(settings?.claude.accounts ?? []).map((a) => ({ value: a.id, label: a.label }))} />
@@ -101,18 +101,18 @@ export function PrepOptions({
               value={value.model}
               onChange={(v) => onChange({ model: v })}
               options={[
-                { value: 'opus', label: 'Opus (más criterio)' },
+                { value: 'opus', label: 'Opus (más preciso)' },
                 { value: 'sonnet', label: 'Sonnet (más rápido)' },
               ]}
             />
           </Field>
-          <Field label="Voz del cierre" hint="Quién dice «¡Robles punto a i!» al final">
+          <Field label="Voz del cierre" hint="Voz que dice «¡Robles punto a i!» al final">
             <Select
               value={value.closingVoice}
               onChange={(v) => onChange({ closingVoice: v as EpisodeState['closingVoice'] })}
               options={[
                 { value: 'narrator', label: 'El narrador del video' },
-                { value: 'template', label: 'La de la plantilla' },
+                { value: 'template', label: 'Voz de la plantilla' },
               ]}
             />
           </Field>

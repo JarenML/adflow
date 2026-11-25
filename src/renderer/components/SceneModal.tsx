@@ -102,7 +102,7 @@ export function SceneModal({
             {dialogue?.texto && <Row label={`Diálogo · ${dialogue.quien ?? 'Personaje'}`}>«{dialogue.texto}»</Row>}
             {texts.length > 0 && <Row label="Texto en pantalla">{texts.join(' · ')}</Row>}
             {scene?.motivo && <Row label="Motivo">{scene.motivo}</Row>}
-            {!scene && <p className="text-[12px] text-faint">Esta escena no está en escenas.json.</p>}
+            {!scene && <p className="text-[12px] text-faint">No hay datos de esta escena en el guion.</p>}
             {prompt && (
               <div>
                 <div className="flex items-center justify-between">

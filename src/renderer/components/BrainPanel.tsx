@@ -94,9 +94,9 @@ export function BrainPanel({
       <div ref={listRef} className="flex-1 space-y-2 overflow-y-auto px-4 py-4">
         {activity.length === 0 && (
           <p className="pt-8 text-center text-[12px] leading-relaxed text-faint">
-            Aquí verás lo que Claude hace en este paso:
+            Aquí aparecerá la actividad de Claude en este paso:
             <br />
-            qué lee, qué escribe y qué decide.
+            archivos que lee, cambios y decisiones.
           </p>
         )}
         <AnimatePresence initial={false}>
@@ -149,9 +149,9 @@ export function BrainPanel({
             className={cx(inputCls, 'min-h-[76px] resize-none pr-11 text-[13px]')}
             placeholder={
               !canChat
-                ? 'El chat se activa en Guion, Imágenes, Videos, Render final y Publicación.'
+                ? 'El chat está disponible en Guion, Imágenes, Videos, Render final y Publicación.'
                 : !hasOutput
-                  ? 'Primero genera este paso.'
+                  ? 'Genera este paso para usar el chat.'
                   : step === 'publish'
                     ? 'Ej.: el texto más corto y que mencione la demo gratis…'
                     : step === 'render'

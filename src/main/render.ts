@@ -78,7 +78,7 @@ async function linkRuntime(project: string, log: (text: string) => void, signal?
   const key = createHash('sha256').update(fs.readFileSync(lockFile)).digest('hex').slice(0, 12);
   const runtime = path.join(getDataDir(), 'remotion', key);
   if (!fs.existsSync(path.join(runtime, 'node_modules', 'remotion'))) {
-    log('Instala Remotion (solo la primera vez: después lo comparten todos los episodios)');
+    log('Instala Remotion (solo la primera vez)');
     fs.mkdirSync(runtime, { recursive: true });
     for (const f of ['package.json', 'package-lock.json']) if (fs.existsSync(path.join(project, f))) fs.copyFileSync(path.join(project, f), path.join(runtime, f));
     const lock = fs.existsSync(path.join(runtime, 'package-lock.json'));
@@ -120,7 +120,7 @@ export async function prepareProject(
   let createdFrom: string | undefined;
   if (!isProject(dest)) {
     const src = projectSource(pb, episodeDir, serie);
-    if (!isProject(src.dir)) throw new Error('No se encontró la plantilla de Remotion en el playbook: actualízalo en Ajustes.');
+    if (!isProject(src.dir)) throw new Error('No se encontró la plantilla de Remotion en el playbook. Actualízalo desde Ajustes.');
     log(`Crea el proyecto Remotion desde ${src.label}`);
     fs.mkdirSync(dest, { recursive: true });
     for (const f of ['package.json', 'package-lock.json', 'tsconfig.json']) {
@@ -162,7 +162,7 @@ export async function prepareProject(
   if (!fs.readdirSync(sfx).some((f) => f.endsWith('.wav')) && fs.existsSync(tool)) {
     log('Sintetiza los efectos de sonido');
     const r = await runCli('python', [tool, sfx], { timeoutMs: 120_000, shell: false, signal });
-    if (r.code !== 0) log('No se pudieron sintetizar los efectos (falta Python): el video sale sin ellos.');
+    if (r.code !== 0) log('No se pudieron generar los efectos de sonido porque falta Python. El video se renderizará sin ellos.');
   }
 
   syncMaterial(episodeDir, dest);

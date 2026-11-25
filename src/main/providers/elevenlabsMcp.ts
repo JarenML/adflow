@@ -203,7 +203,7 @@ export async function mcpClip(job: McpClipJob): Promise<McpClipResult> {
     /* Claude did not write it */
   }
   if (!out) {
-    const why = res.error || res.text || 'Claude no dejó el resultado del clip.';
+    const why = res.error || res.text || 'Claude no devolvió el resultado del clip.';
     const hint = charged
       ? ' La generación sí se lanzó: revisa el flow en ElevenLabs (Image & Video → History) antes de volver a intentar.'
       : /ElevenLabs|mcp|tool/i.test(why)

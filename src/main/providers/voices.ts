@@ -41,7 +41,7 @@ async function edgeVoices(): Promise<VoiceOption[]> {
 }
 
 async function elevenVoices(key?: string): Promise<VoiceOption[]> {
-  if (!key) throw new Error('Agrega la API key de ElevenLabs en Ajustes para ver sus voces.');
+  if (!key) throw new Error('Agrega la clave de API de ElevenLabs en Ajustes para ver sus voces.');
   // Listing voices does not spend credits.
   const res = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': key } });
   if (!res.ok) throw new Error(`ElevenLabs respondió ${res.status}`);
@@ -108,7 +108,7 @@ export async function listVoices(providerId: string, secrets: Record<string, str
     case 'elevenlabs':
       return elevenVoices(secrets.elevenlabs);
     default:
-      throw new Error('Este proveedor todavía no está conectado en AdFlow.');
+      throw new Error('Este proveedor aún no está disponible en AdFlow.');
   }
 }
 
@@ -121,7 +121,7 @@ export async function voiceById(providerId: string, voiceId: string, secrets: Re
       if (!opts.dataDir) throw new Error('Falta la carpeta de datos de AdFlow.');
       return heygenVoiceById(opts.dataDir, id);
     case 'elevenlabs': {
-      if (!secrets.elevenlabs) throw new Error('Agrega la API key de ElevenLabs en Ajustes.');
+      if (!secrets.elevenlabs) throw new Error('Agrega la clave de API de ElevenLabs en Ajustes.');
       const res = await fetch(`https://api.elevenlabs.io/v1/voices/${id}`, { headers: { 'xi-api-key': secrets.elevenlabs } });
       if (!res.ok) throw new Error(res.status === 404 || res.status === 400 ? 'ElevenLabs no tiene una voz con ese ID en tu cuenta (agrégala primero a "Mis voces").' : `ElevenLabs respondió ${res.status}`);
       const v = (await res.json()) as { voice_id: string; name: string; labels?: Record<string, string>; preview_url?: string | null };
@@ -146,7 +146,7 @@ export async function synthesize(
 ): Promise<{ ok: boolean; file: string; error?: string }> {
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   if (providerId === 'elevenlabs') {
-    if (!keys.elevenlabs) return { ok: false, file: outFile, error: 'Falta la API key de ElevenLabs en Ajustes.' };
+    if (!keys.elevenlabs) return { ok: false, file: outFile, error: 'Falta la clave de API de ElevenLabs en Ajustes.' };
     try {
       return { ok: true, file: await elevenSpeech(keys.elevenlabs, voiceId, text, outFile) };
     } catch (err) {
@@ -175,5 +175,5 @@ export async function synthesize(
     });
     return fs.existsSync(out) ? { ok: true, file: out } : { ok: false, file: out, error: res.stderr.trim() || 'Sin audio' };
   }
-  return { ok: false, file: outFile, error: 'Este proveedor gasta créditos y todavía está bloqueado en AdFlow.' };
+  return { ok: false, file: outFile, error: 'Este proveedor consume créditos y no está habilitado en Ajustes.' };
 }

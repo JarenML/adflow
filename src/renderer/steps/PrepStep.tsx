@@ -8,7 +8,7 @@ import { PrepOptions, type PrepChoice } from '../components/PrepOptions';
 export { billingTag } from '../components/PrepOptions';
 
 const SOURCE_HINT: Record<string, string> = {
-  'produccion-redes': 'Viene de «Producción de redes» en el admin.',
+  'produccion-redes': 'Episodio de Producción de redes.',
 };
 
 export function PrepStep({ episode }: { episode: EpisodeState }) {
@@ -41,7 +41,7 @@ export function PrepStep({ episode }: { episode: EpisodeState }) {
       <Card className="p-5">
         <SectionTitle
           title="Episodio"
-          hint={SOURCE_HINT[episode.source?.id ?? ''] ?? 'Episodio de esta computadora.'}
+          hint={SOURCE_HINT[episode.source?.id ?? ''] ?? 'Episodio local.'}
           right={
             <Button size="sm" variant="ghost" icon={<FolderOpen className="size-4" />} onClick={() => api.openPath(episode.dir)}>
               Abrir carpeta
@@ -67,9 +67,9 @@ export function PrepStep({ episode }: { episode: EpisodeState }) {
 
       <div className={cx('flex items-center justify-between rounded-2xl border px-5 py-4', locked ? 'border-ok/30 bg-ok/5' : 'border-brand/30 bg-brand/5')}>
         <div>
-          <p className="text-sm font-semibold">{locked ? 'Preparación aprobada' : 'Todo listo para escribir el guion'}</p>
+          <p className="text-sm font-semibold">{locked ? 'Preparación aprobada' : 'Listo para escribir el guion'}</p>
           <p className="text-[12px] text-mute">
-            {locked ? 'Puedes cambiar proveedores de imágenes, video y voz antes de cada paso.' : 'Claude leerá el playbook y el caso, y escribirá guion.md y escenas.json.'}
+            {locked ? 'Puedes cambiar proveedores de imágenes, video y voz antes de cada paso.' : 'Claude leerá el playbook y el caso, y escribirá el guion y las escenas.'}
           </p>
         </div>
         {!locked && (

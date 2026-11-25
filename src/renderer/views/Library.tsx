@@ -118,7 +118,7 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
       <div className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Biblioteca de episodios</h1>
-          <p className="mt-1 text-[13px] text-mute">Todos los episodios de la fuente elegida en Ajustes, por estado.</p>
+          <p className="mt-1 text-[13px] text-mute">Todos los episodios, organizados por estado.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button icon={<RefreshCw className={cx('size-4', refreshing && 'animate-spin')} />} disabled={refreshing} onClick={() => void reload()}>
@@ -163,7 +163,7 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
             </button>
           ))}
           {business && !businesses.some((b) => b.key === business) && (
-            <span className="text-faint">· el negocio elegido no tiene episodios en esta pestaña</span>
+            <span className="text-faint">· no hay episodios de este negocio en esta pestaña</span>
           )}
         </div>
       )}
@@ -172,7 +172,7 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
       {error && <div className="selectable mb-4 rounded-xl border border-bad/30 bg-bad/5 px-4 py-3 text-[12.5px] text-bad">{error}</div>}
 
       {!items ? null : !list.length ? (
-        <Empty icon={<CircleDashed className="size-5" />} title="La fuente no tiene episodios" hint="Revisa la fuente de episodios y la carpeta del playbook en Ajustes." />
+        <Empty icon={<CircleDashed className="size-5" />} title="La fuente no tiene episodios" hint="Revisa la conexión y el playbook en Ajustes." />
       ) : !shown.length ? (
         <Empty icon={<CircleDashed className="size-5" />} title={`Ningún episodio ${TEAM_STATUS_LABEL[tab].toLowerCase()}`} />
       ) : (

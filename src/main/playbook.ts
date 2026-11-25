@@ -38,7 +38,7 @@ export function loadConfig(p: Playbook): LoadedConfig {
 
 export function playbookReady(p: Playbook): { ok: boolean; problems: string[] } {
   const problems: string[] = [];
-  if (!p.rootDir) problems.push(p.origin === 'team' ? 'Aún no se descargó el playbook del admin: revisa la conexión en Ajustes.' : 'No está configurada la carpeta del playbook.');
+  if (!p.rootDir) problems.push(p.origin === 'team' ? 'El playbook aún no se ha descargado. Revisa la conexión en Ajustes.' : 'No está configurada la carpeta del playbook.');
   else if (!fs.existsSync(resolveIn(p, p.masterPrompt))) problems.push(`Prompt maestro: no existe ${p.masterPrompt}`);
   const cfg = loadConfig(p);
   if (cfg.error) problems.push(cfg.error);

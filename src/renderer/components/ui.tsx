@@ -64,9 +64,9 @@ export const STATUS_LABEL: Record<StepStatus, string> = {
   locked: 'Bloqueado',
   ready: 'Listo para empezar',
   working: 'Trabajando',
-  review: 'Esperando por ti',
+  review: 'Requiere tu revisión',
   approved: 'Aprobado',
-  error: 'Necesita atención',
+  error: 'Requiere atención',
 };
 
 const STATUS_STYLE: Record<StepStatus, string> = {
@@ -173,8 +173,8 @@ export function TeamStatusPill({ progress, status, extra }: { progress?: TeamPro
       {s === 'publicado' ? <CheckCircle2 className="size-3" /> : s === 'pendiente' ? <Circle className="size-3" /> : <span className={cx('size-1.5 rounded-full bg-current', s === 'en_produccion' && 'animate-pulse')} />}
       {label}
       {extra && <span className="opacity-70">· {extra}</span>}
-      {progress?.waitingForYou && <span className="ml-0.5 size-1.5 rounded-full bg-warn" title="Esperando por ti" />}
-      {progress?.error && <span className="ml-0.5 size-1.5 rounded-full bg-bad" title="Necesita atención" />}
+      {progress?.waitingForYou && <span className="ml-0.5 size-1.5 rounded-full bg-warn" title="Requiere tu revisión" />}
+      {progress?.error && <span className="ml-0.5 size-1.5 rounded-full bg-bad" title="Requiere atención" />}
     </span>
   );
 }

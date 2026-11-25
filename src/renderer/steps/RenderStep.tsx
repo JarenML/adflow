@@ -5,7 +5,7 @@ import { Button, Card, cx, SectionTitle, Tag } from '../components/ui';
 
 // Checklist §6 of the playbook. Duration and size are measured; the rest is for the person to check.
 const CHECKLIST = [
-  'Primer cuadro con acción real y el problema claro a los 3 s',
+  'Acción real desde el primer fotograma y problema claro a los 3 s',
   'Ningún tramo quieto de más de 0,4 s',
   'Logo 2,50 s y escena final 6,36 s',
   'Textos en zonas seguras y subtítulos sincronizados',
@@ -48,7 +48,7 @@ export function RenderStep({ episode }: { episode: EpisodeState }) {
       <Card className="p-5">
         <SectionTitle
           title="Material del episodio"
-          hint="Todo lo que entra al montaje en Remotion."
+          hint="Archivos que se usan en el montaje."
           right={
             <Button size="sm" variant="ghost" icon={<FolderOpen className="size-4" />} onClick={() => api.openPath(episode.dir)}>
               Abrir carpeta
@@ -88,7 +88,7 @@ export function RenderStep({ episode }: { episode: EpisodeState }) {
           <div className="grid grid-cols-[320px_1fr] gap-5">
             <video key={data.video.url} src={data.video.url} controls className="aspect-[9/16] w-full rounded-xl border border-line bg-black" />
             <div className="space-y-2 text-[12.5px]">
-              <p className="text-mute">¿Algo que cambiar? Pídeselo a Claude en el chat de la derecha: corrige el mismo proyecto y vuelve a renderizar.</p>
+              <p className="text-mute">¿Necesitas cambios? Pídelos a Claude en el chat lateral; corregirá el proyecto y volverá a renderizar.</p>
               <ul className="space-y-2">
                 <li className="flex items-center gap-2">
                   {durationOk ? <CheckCircle2 className="size-4 text-ok" /> : <CircleAlert className="size-4 text-warn" />}
@@ -119,9 +119,9 @@ export function RenderStep({ episode }: { episode: EpisodeState }) {
                 {working && <Tag tone="brand">En curso</Tag>}
               </div>
               <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-mute">
-                AdFlow prepara el proyecto con la plantilla del playbook y el material del episodio, Claude arma las escenas (2D, logo, cierre,
-                voces, subtítulos y efectos) y AdFlow renderiza a 1080×1920, masteriza a −14 LUFS y deja el MP4 en la carpeta del episodio. La
-                primera vez instala Remotion y tarda unos minutos más.
+                AdFlow prepara el proyecto con la plantilla del playbook y el material del episodio. Claude monta las escenas (2D, logo, cierre,
+                voces, subtítulos y efectos) y AdFlow renderiza a 1080×1920, masteriza el audio a −14 LUFS y guarda el MP4 en la carpeta del
+                episodio. La primera vez se instala Remotion y tarda unos minutos más.
               </p>
               {episode.steps.render.error && <p className="mt-2 text-[12.5px] text-bad">{episode.steps.render.error}</p>}
               <Button className="mt-4" variant="primary" icon={<Wand2 className="size-4" />} loading={working} onClick={() => api.act(episode.id, { step: 'render', type: 'build' })}>
@@ -133,7 +133,7 @@ export function RenderStep({ episode }: { episode: EpisodeState }) {
       )}
 
       <Card className="p-5">
-        <SectionTitle title="Checklist antes de entregar" hint="Revísalo sobre el video final antes de aprobar." />
+        <SectionTitle title="Checklist antes de entregar" hint="Verifica cada punto en el video final antes de aprobar." />
         <ul className="grid grid-cols-2 gap-2">
           {CHECKLIST.map((c) => (
             <li key={c} className="flex items-start gap-2 rounded-lg border border-line bg-panel-2/30 px-3 py-2 text-[12.5px] text-mute">

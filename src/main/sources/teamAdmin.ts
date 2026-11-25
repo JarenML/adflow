@@ -50,7 +50,7 @@ function token(): string {
 
 function baseUrl(): string {
   const url = process.env.ADFLOW_TEAM_URL || loadSettings().team.url;
-  if (!url) throw new Error('Falta la dirección del admin en Ajustes → Fuente de episodios.');
+  if (!url) throw new Error('Falta la dirección del panel de administración en Ajustes → Playbook.');
   return url.replace(/\/+$/, '');
 }
 
@@ -66,7 +66,7 @@ export class TeamApiError extends Error {
 
 async function api<T>(route: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const t = token();
-  if (!t) throw new TeamApiError('Falta el token de AdFlow: généralo en el admin (Producción de redes → Conectar AdFlow).', 401);
+  if (!t) throw new TeamApiError('Falta el token de AdFlow. Genéralo en el panel de administración (Producción de redes → Conectar AdFlow).', 401);
   let res: Response;
   try {
     res = await fetch(`${baseUrl()}/api/adflow${route}`, {
@@ -76,18 +76,18 @@ async function api<T>(route: string, init: { method?: string; body?: unknown } =
       signal: AbortSignal.timeout(15_000),
     });
   } catch (err) {
-    throw new TeamApiError(`No se pudo conectar con el admin (${baseUrl()}): ${String((err as Error).message ?? err)}`, 0);
+    throw new TeamApiError(`No se pudo conectar con el panel de administración (${baseUrl()}): ${String((err as Error).message ?? err)}`, 0);
   }
   const json = (await res.json().catch(() => ({}))) as { error?: string; code?: string; by?: string };
   if (!res.ok) {
     const msg =
       json.code === 'social_episode_taken'
-        ? `Este episodio ya lo tiene ${json.by ?? 'otra persona'}.`
+        ? `Este episodio ya está asignado a ${json.by ?? 'otra persona'}.`
         : json.code === 'adflow_unauthorized'
           ? 'El token de AdFlow no es válido o fue revocado.'
           : json.code === 'adflow_forbidden'
             ? 'Tu usuario no tiene acceso a Producción de redes.'
-            : (json.error ?? `El admin respondió ${res.status}`);
+            : (json.error ?? `El panel de administración respondió con el código ${res.status}.`);
     throw new TeamApiError(msg, res.status, json.code);
   }
   return json as T;
@@ -108,7 +108,7 @@ export async function fetchPlaybookFile(rel: string): Promise<Buffer> {
   } catch (err) {
     throw new TeamApiError(`No se pudo descargar ${rel}: ${String((err as Error).message ?? err)}`, 0);
   }
-  if (!res.ok) throw new TeamApiError(`El admin no entregó ${rel} (${res.status})`, res.status);
+  if (!res.ok) throw new TeamApiError(`El panel de administración no devolvió ${rel} (${res.status}).`, res.status);
   return Buffer.from(await res.arrayBuffer());
 }
 
@@ -192,8 +192,8 @@ export async function checkTeamConnection(): Promise<{ name: string; email: stri
 
 export const teamAdminSource: EpisodeSource = {
   id: 'produccion-redes',
-  name: 'Producción de redes (admin)',
-  description: 'Episodios del equipo en el admin: quién lleva cada uno, en qué paso va y cuáles están publicados.',
+  name: 'Producción de redes',
+  description: 'Episodios del equipo: responsable, paso actual y estado de publicación.',
   implemented: true,
   shared: true,
 
@@ -229,7 +229,7 @@ export const teamAdminSource: EpisodeSource = {
 
   async saveScript(_p, episodeId, s) {
     if (s.guion.length > SCRIPT_LIMITS.guion || (s.escenas?.length ?? 0) > SCRIPT_LIMITS.escenas) {
-      throw new Error('El guion es demasiado largo para guardarlo en el admin.');
+      throw new Error('El guion es demasiado largo para guardarlo en el panel de administración.');
     }
     try {
       await sendScript(episodeId, s);

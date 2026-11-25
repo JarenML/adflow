@@ -54,7 +54,7 @@ export function ClaudeCardLine({ episode, usage }: { episode: EpisodeState; usag
   if (!total.runs) return null;
   const est = estimatePct(total.usd, usage);
   return (
-    <span className="text-[11px] text-faint" title="Uso de Claude de este episodio (equivalente en USD; con suscripción no se cobra)">
+    <span className="text-[11px] text-faint" title="Uso de Claude en este episodio (equivalente en USD; incluido en tu suscripción)">
       Claude {est !== null && <>≈ {pct(est)} de 5 h · </>}
       {usd(total.usd)}
     </span>
@@ -87,14 +87,14 @@ export function LimitBars({ usage }: { usage?: ClaudeUsage }) {
       <Bar
         label="Claude · 5 h"
         w={expired ? { ...fiveHour, pct: 0 } : fiveHour}
-        sub={expired ? 'Ya se reinició' : `Se reinicia a las ${clock(fiveHour.resetsAt)}`}
-        hint="Uso del límite de 5 horas de tu cuenta de Claude (todo lo que la usa, no solo AdFlow). Se actualiza cada vez que AdFlow llama a Claude."
+        sub={expired ? 'Restablecido' : `Se restablece a las ${clock(fiveHour.resetsAt)}`}
+        hint="Uso del límite de 5 horas de tu cuenta de Claude, incluido el uso fuera de AdFlow. Se actualiza con cada solicitud de AdFlow."
       />
       {sevenDay && (
         <Bar
           label="Claude · semana"
           w={sevenDay.resetsAt < Date.now() ? { ...sevenDay, pct: 0 } : sevenDay}
-          sub={sevenDay.resetsAt < Date.now() ? 'Ya se reinició' : `Se reinicia el ${day(sevenDay.resetsAt)}`}
+          sub={sevenDay.resetsAt < Date.now() ? 'Restablecido' : `Se restablece el ${day(sevenDay.resetsAt)}`}
           hint="Uso del límite semanal de tu cuenta de Claude."
         />
       )}
@@ -150,9 +150,9 @@ export function EpisodeClaudeUsage({ episode, usage }: { episode: EpisodeState; 
             <p className="mt-3 text-[11px] leading-relaxed text-mute">
               USD equivalentes: lo que costaría por la API. Con tu suscripción no se cobra; sirve para comparar.{' '}
               {usage?.pctPerUsd
-                ? `El % del límite de 5 h es una estimación aprendida de ${usage.samples} sesiones de AdFlow en esta cuenta.`
-                : 'El % del límite de 5 h aparece después de unas sesiones: AdFlow lo aprende de tu cuenta.'}{' '}
-              Tokens y tiempo solo de sesiones desde la versión 0.1.4.
+                ? `El % del límite de 5 h es una estimación basada en ${usage.samples} sesiones de esta cuenta.`
+                : 'El % del límite de 5 h estará disponible tras algunas sesiones.'}{' '}
+              Tokens y tiempo registrados desde la versión 0.1.4.
             </p>
           </div>
         </>

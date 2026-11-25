@@ -8,7 +8,7 @@ export const PROVIDERS: ProviderInfo[] = [
     id: 'claude-cli',
     capability: 'brain',
     name: 'Claude Code',
-    description: 'Orquesta el episodio con la cuenta en la que Claude Code tiene sesión en esta computadora.',
+    description: 'Coordina el episodio con la cuenta de Claude Code de esta computadora.',
     billing: 'subscription',
     implemented: true,
     costNote: 'Incluido en tu suscripción de Claude (consume su límite de uso).',
@@ -47,10 +47,10 @@ export const PROVIDERS: ProviderInfo[] = [
     id: 'manual',
     capability: 'video',
     name: 'Subir clips a mano',
-    description: 'Generas el clip donde prefieras (Firefly, Flow, Gemini…) y lo arrastras aquí.',
+    description: 'Genera el clip con la herramienta que prefieras (Firefly, Flow, Gemini…) y súbelo aquí.',
     billing: 'manual',
     implemented: true,
-    costNote: 'Lo pagas en la herramienta que uses.',
+    costNote: 'Se paga en la herramienta que uses.',
   },
   {
     id: 'firefly-veo',
@@ -106,7 +106,7 @@ export const PROVIDERS: ProviderInfo[] = [
     id: 'windows-sapi',
     capability: 'voice',
     name: 'Voces de Windows',
-    description: 'Voces instaladas en el sistema. Sirven para probar tiempos (voz temporal).',
+    description: 'Voces instaladas en el sistema, útiles como voz provisional para ajustar tiempos.',
     billing: 'free',
     implemented: true,
     costNote: 'Gratis y sin conexión.',
@@ -135,7 +135,7 @@ export const PROVIDERS: ProviderInfo[] = [
     capability: 'voice',
     name: 'HeyGen · voces (MCP)',
     description:
-      'Voces de HeyGen por el MCP de HeyGen de tu Claude Code (sin API key en AdFlow): catálogo con muestras gratis y narración con una sola llamada por frase.',
+      'Voces de HeyGen a través de Claude Code, sin clave de API en AdFlow. Incluye catálogo con muestras gratuitas.',
     billing: 'credits',
     implemented: true,
     costNote: 'Cuota de voz de tu plan de HeyGen; AdFlow mide los créditos premium antes y después de cada ejecución.',
@@ -164,7 +164,7 @@ export const PROVIDERS: ProviderInfo[] = [
     id: 'elevenlabs-music',
     capability: 'music',
     name: 'ElevenLabs Music',
-    description: 'Pista instrumental calzada a la línea de tiempo (tensión, solución, drop).',
+    description: 'Pista instrumental sincronizada con la línea de tiempo (tensión, solución, drop).',
     billing: 'credits',
     implemented: false,
     secret: 'elevenlabs',
@@ -205,7 +205,7 @@ export function estimate(providerId: string, units: number): string {
     case 'edge-tts':
       return `${units} frases · gratis`;
     case 'manual':
-      return `${units} clip${units === 1 ? '' : 's'} · los generas tú`;
+      return `${units} clip${units === 1 ? '' : 's'} · generación externa`;
     default:
       return `${units} × ${p.costNote}`;
   }

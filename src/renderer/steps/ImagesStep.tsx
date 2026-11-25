@@ -28,7 +28,7 @@ function ImageCard({ img, episode, onAsk, onView, active }: { img: ImageItem; ep
             <span className="rounded-md bg-black/50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-white">{img.sceneId}</span>
             {/* The script made this scene a video clip: this image is its first frame. */}
             {img.clip && (
-              <span title="El guion la convierte en clip de video: esta imagen es su primer cuadro.">
+              <span title="Esta escena será un clip de video; esta imagen es su primer fotograma.">
                 <Tag tone="cyan">
                   <Clapperboard className="size-3" /> Clip
                 </Tag>
@@ -102,7 +102,7 @@ export function ImagesStep({ episode, onTarget, target }: { episode: EpisodeStat
       <Empty
         icon={<ImageIcon className="size-5" />}
         title={st === 'error' ? 'No se pudieron preparar las imágenes' : 'Claude prepara un prompt por escena y Codex genera cada imagen'}
-        hint={episode.steps.images.error ?? `Con continuidad de personajes y objetos entre escenas. Estimado: ${estimate}.`}
+        hint={episode.steps.images.error ?? `Mantiene la continuidad de personajes y objetos entre escenas. Estimado: ${estimate}.`}
         action={
           <Button variant="primary" icon={<Wand2 className="size-4" />} onClick={() => api.act(episode.id, { step: 'images', type: 'prepare' })}>
             Crear prompts y generar imágenes
@@ -120,7 +120,7 @@ export function ImagesStep({ episode, onTarget, target }: { episode: EpisodeStat
       <Card className="p-5">
         <SectionTitle
           title={`${done} de ${list.length} imágenes listas`}
-          hint="Haz clic en «Corregir» para decirle a Claude qué cambiar de una imagen: reescribe su prompt y la vuelve a generar."
+          hint="Usa «Corregir» para indicar a Claude qué cambiar en una imagen; reescribirá el prompt y la generará de nuevo."
           right={
             <div className="flex gap-2">
               {pending > 0 && (

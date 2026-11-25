@@ -179,7 +179,7 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
   };
 
   if (!list.length) {
-    return <Empty icon={<Mic className="size-5" />} title="No hay frases del narrador" hint="Aprueba el guion primero: las frases salen de la locución de cada escena." />;
+    return <Empty icon={<Mic className="size-5" />} title="No hay frases del narrador" hint="Aprueba el guion para continuar; las frases se toman de la locución de cada escena." />;
   }
 
   const SampleButton = ({ v, size = 'md' }: { v: VoiceOption; size?: 'sm' | 'md' }) =>
@@ -189,7 +189,7 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
           e.stopPropagation();
           void playSample(v);
         }}
-        title="Escuchar la muestra que el proveedor ya grabó (gratis, no gasta créditos)"
+        title="Escuchar la muestra del proveedor (no consume créditos)"
         className={cx(
           'no-drag grid shrink-0 place-items-center rounded-full border transition-colors',
           size === 'sm' ? 'size-7' : 'size-8',
@@ -215,8 +215,8 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
           title="Voz del narrador"
           hint={
             prov?.implemented && !usable
-              ? 'ElevenLabs gasta créditos: actívalo en Ajustes → Proveedores y agrega tu API key.'
-              : 'La misma voz en toda la serie. Escucha las muestras (gratis) y elige con un clic.'
+              ? 'ElevenLabs consume créditos. Habilítalo en Ajustes → Proveedores y agrega tu clave de API.'
+              : 'Usa la misma voz en toda la serie. Escucha las muestras gratuitas y selecciona una.'
           }
           right={prov && billingTag(prov, !!settings?.allowPaidProviders)}
         />
@@ -240,7 +240,7 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
                   {chosen && <SampleButton v={chosen} size="sm" />}
                 </>
               ) : (
-                <span className="text-[13px] text-faint">Ninguna todavía: elige una en la lista.</span>
+                <span className="text-[13px] text-faint">Ninguna seleccionada. Elige una de la lista.</span>
               )}
             </div>
           </Field>
@@ -265,7 +265,7 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
               <button
                 className="no-drag flex items-center gap-1 rounded-md px-1.5 py-0.5 text-mute hover:bg-panel-2 hover:text-ink disabled:opacity-40"
                 disabled={voicesLoading}
-                title="Volver a leer el catálogo de HeyGen (gratis; tarda alrededor de un minuto)"
+                title="Actualizar el catálogo de HeyGen (gratuito; tarda alrededor de un minuto)"
                 onClick={() => loadVoices(true)}
               >
                 <RefreshCw className={cx('size-3', voicesLoading && 'animate-spin')} /> Actualizar
@@ -278,9 +278,9 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
           <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-brand/30 bg-brand/5 p-3">
             <Hash className="size-4 shrink-0 text-brand-2" />
             <div className="min-w-0 flex-1">
-              <p className="text-[12.5px] text-ink">Parece un ID de voz y no está en la lista.</p>
+              <p className="text-[12.5px] text-ink">Parece un ID de voz que no está en la lista.</p>
               <p className="break-anywhere text-[11.5px] text-faint">
-                {pastedId} · AdFlow la busca en {heygen ? 'HeyGen' : 'ElevenLabs'}, la agrega y la elige. No gasta créditos{heygen ? '; tarda unos segundos' : ''}.
+                {pastedId} · Se buscará en {heygen ? 'HeyGen' : 'ElevenLabs'} y se agregará a la lista. No consume créditos{heygen ? '; puede tardar unos segundos' : ''}.
               </p>
             </div>
             <Button icon={<Search className="size-4" />} loading={lookingUp} onClick={lookupById}>
@@ -326,7 +326,7 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
             <p className="col-span-full py-8 text-center text-[12px] text-faint">
               {voicesLoading
                 ? heygen
-                  ? 'Claude lee el catálogo de HeyGen con su MCP (gratis). La primera vez tarda alrededor de un minuto; después queda guardado una semana.'
+                  ? 'Cargando el catálogo de HeyGen (gratuito). La primera vez tarda alrededor de un minuto; luego se guarda durante una semana.'
                   : 'Cargando voces…'
                 : voices.length ? 'Ninguna voz coincide con la búsqueda.' : voiceError ? '' : 'Este proveedor no tiene voces disponibles.'}
             </p>
@@ -338,9 +338,9 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
           <div className="mt-2 flex items-start gap-2 rounded-xl border border-warn/25 bg-warn/5 p-3 text-[12px] text-warn">
             <CircleAlert className="mt-0.5 size-4 shrink-0" />
             <span>
-              En HeyGen, la muestra ▶ de varias voces está en inglés aunque la voz sea en español: sirve solo para oír el timbre.
-              Guíate por la etiqueta de idioma de cada voz (por ejemplo, <b>es</b>). La narración sale en el idioma del guion.
-              Para oír de verdad cómo sonará, usa «Probar la voz con una frase del guion».
+              En HeyGen, algunas muestras ▶ están en inglés aunque la voz sea en español; sirven solo como referencia del timbre.
+              Guíate por la etiqueta de idioma de cada voz (por ejemplo, <b>es</b>). La narración se genera en el idioma del guion.
+              Para escuchar el resultado real, usa «Probar la voz con una frase del guion».
             </span>
           </div>
         )}
@@ -351,7 +351,7 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
             <span className="flex items-center gap-2 text-[13px] text-ink">
               <Sparkles className="size-4 text-brand-2" />
               Probar la voz con una frase del guion
-              {(paid || heygen) && <Tag tone="warn">{heygen ? 'gasta cuota de HeyGen' : 'gasta créditos'}</Tag>}
+              {(paid || heygen) && <Tag tone="warn">{heygen ? 'consume cuota de HeyGen' : 'consume créditos'}</Tag>}
             </span>
             <ChevronDown className={cx('size-4 text-faint transition-transform', testOpen && 'rotate-180')} />
           </button>
@@ -376,8 +376,8 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
             title={heygen ? 'Límite de créditos premium (HeyGen)' : 'Límite de créditos'}
             hint={
               heygen
-                ? 'HeyGen cobra 1 crédito premium cada 1,000 caracteres en un medidor acumulado, así que N caracteres pueden descontar hasta N ÷ 1,000 redondeado hacia arriba. AdFlow solo envía las frases que caben en ese peor caso: nunca pasa el límite.'
-                : 'AdFlow revisa cada frase antes de enviarla: si pasaría el límite, se detiene y no la envía. Un video completo ≈ 400–600 créditos (1 por carácter).'
+                ? 'HeyGen descuenta 1 crédito premium por cada 1,000 caracteres acumulados. AdFlow solo envía las frases que caben en el límite, calculado para el peor caso.'
+                : 'AdFlow verifica cada frase antes de enviarla y se detiene si superaría el límite. Un video completo usa ≈ 400–600 créditos (1 por carácter).'
             }
           />
           <div className="grid grid-cols-[180px_1fr] items-center gap-5">
@@ -415,10 +415,10 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
               </div>
               <p className={cx('mt-1.5 text-[12px]', overLimit ? 'text-warn' : 'text-faint')}>
                 {overLimit
-                  ? `No alcanza: se generan ${fitsCount} de ${list.length} frases y se detiene antes de ${list[fitsCount]?.id ?? ''}.`
+                  ? `Créditos insuficientes: se generarán ${fitsCount} de ${list.length} frases, hasta antes de ${list[fitsCount]?.id ?? ''}.`
                   : heygen
-                    ? `Alcanza para todas las frases. Margen: ${limit - hgNeed} crédito(s) premium.`
-                    : `Alcanza para todas las frases. Quedan ≈ ${fmt(limit - planAll.total)} de margen.`}
+                    ? `Suficiente para todas las frases. Margen: ${limit - hgNeed} crédito(s) premium.`
+                    : `Suficiente para todas las frases. Margen: ≈ ${fmt(limit - planAll.total)}.`}
               </p>
             </div>
           </div>
@@ -431,10 +431,10 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
           title="Narración"
           hint={
             paid
-              ? 'Una toma por frase. Las que no se generan conservan su audio anterior.'
+              ? 'Una toma por frase. Las frases que no se regeneren conservan su audio actual.'
               : heygen
-                ? `Todas las frases: ${fmt(planAll.total)} caracteres ≈ ${hgCredits(planAll.total)} crédito premium (HeyGen cobra 1 crédito cada 1,000 caracteres, en un medidor acumulado). Una sola llamada por frase, nunca repetida.`
-                : 'Voz temporal para probar tiempos: las etiquetas de emoción solo las interpreta ElevenLabs.'
+                ? `Todas las frases: ${fmt(planAll.total)} caracteres ≈ ${hgCredits(planAll.total)} crédito(s) premium (1 crédito por cada 1,000 caracteres acumulados). Una sola solicitud por frase.`
+                : 'Voz provisional para ajustar tiempos. Las etiquetas de emoción solo funcionan con ElevenLabs.'
           }
           right={
             <>
@@ -497,7 +497,7 @@ export function VoiceStep({ episode }: { episode: EpisodeState }) {
                   }
                   onClick={() => api.act(episode.id, { step: 'voice', type: 'generate', lineIds: [l.id] })}
                 >
-                  {l.url ? 'Regenerar esta' : 'Generar'}
+                  {l.url ? 'Regenerar' : 'Generar'}
                 </Button>
               </div>
             );

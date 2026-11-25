@@ -104,11 +104,11 @@ export function SettingsView() {
         {tab === 'playbook' && (
           <>
             <Card className="p-5">
-              <SectionTitle title="Conexión con «Producción de redes»" hint="AdFlow trabaja con los episodios y el playbook del admin, y le informa el avance de cada episodio." />
+              <SectionTitle title="Conexión con «Producción de redes»" hint="Sincroniza los episodios y el playbook con el panel de administración, y reporta el avance de cada episodio." />
               <div className="rounded-xl border border-line bg-panel-2/30 p-4">
-                <p className="text-[12px] text-faint">Genera tu token en el admin: Producción de redes → Conectar AdFlow. Se guarda cifrado en esta computadora.</p>
+                <p className="text-[12px] text-faint">Genera tu token en el panel de administración, en Producción de redes → Conectar AdFlow. Se almacena cifrado en esta computadora.</p>
                 <div className="mt-3 grid grid-cols-[1fr_1fr_auto] items-end gap-3">
-                  <Field label="Dirección del admin">
+                  <Field label="Dirección del panel de administración">
                     <input className={inputCls} placeholder="https://robles.ai" value={teamUrl} onChange={(e) => setTeamUrl(e.target.value)} />
                   </Field>
                   <Field label="Token personal">
@@ -142,7 +142,7 @@ export function SettingsView() {
             <Card className="p-5">
               <SectionTitle
                 title="Playbook del equipo"
-                hint="Viene del admin: prompts maestros, configuración de AdFlow, plantillas y el Robly oficial. Se edita en el repo de robles.ai y AdFlow baja los cambios solo."
+                hint="Prompts maestros, configuración, plantillas y el Robly oficial. Se mantiene en el panel de administración y se sincroniza automáticamente."
                 right={
                   <Button size="sm" icon={<RefreshCw className="size-4" />} loading={pbStatus?.syncing} onClick={() => void syncPlaybook()}>
                     Actualizar ahora
@@ -163,11 +163,11 @@ export function SettingsView() {
                   </div>
                 ))}
               </div>
-              {pbStatus?.error && <p className="mt-3 text-[12px] text-bad">No se pudo actualizar: {pbStatus.error}{pbStatus.version ? ' Se usa la última copia descargada.' : ''}</p>}
-              {!pbStatus?.error && pbStatus?.changed ? <p className="mt-3 text-[12px] text-ok">Última actualización: {pbStatus.changed} archivo(s) nuevos o cambiados.</p> : null}
+              {pbStatus?.error && <p className="mt-3 text-[12px] text-bad">No se pudo sincronizar: {pbStatus.error}{pbStatus.version ? ' Se está usando la última copia descargada.' : ''}</p>}
+              {!pbStatus?.error && pbStatus?.changed ? <p className="mt-3 text-[12px] text-ok">Última sincronización: {pbStatus.changed} archivo(s) actualizados.</p> : null}
             </Card>
             <Card className="p-5">
-              <SectionTitle title="Dónde se guardan los episodios" hint="Cada episodio es una carpeta con su guion, imágenes, clips y voces. Los videos pesan: puedes llevarla a otro disco." />
+              <SectionTitle title="Almacenamiento de episodios" hint="Cada episodio se guarda en una carpeta con su guion, imágenes, clips y audio. Puedes ubicarla en otro disco si necesitas más espacio." />
               <div className="flex items-center gap-2">
                 <input className={cx(inputCls, 'font-mono text-[12px]')} value={storage} readOnly />
                 <Button icon={<FolderOpen className="size-4" />} onClick={() => api.openPath(storage)}>
@@ -184,20 +184,20 @@ export function SettingsView() {
                 </Button>
                 {s.storageDir && (
                   <Button variant="ghost" onClick={async () => { await save({ ...s, storageDir: '' }); api.storagePath().then(setStorage); }}>
-                    Usar la de AdFlow
+                    Restablecer ubicación
                   </Button>
                 )}
               </div>
-              <p className="mt-2 text-[11.5px] text-faint">Los episodios nuevos se crean aquí; los que ya existen se quedan donde están. El guion aprobado de cada uno se guarda además en el admin.</p>
+              <p className="mt-2 text-[11.5px] text-faint">El cambio solo afecta a los episodios nuevos. El guion aprobado también se guarda en el panel de administración.</p>
             </Card>
             <Card className="p-5">
               <SectionTitle
-                title="Secciones que recibe Claude"
-                hint="El prompt maestro se corta por secciones: cada paso recibe solo las suyas más las reglas de siempre."
+                title="Secciones del prompt maestro"
+                hint="Cada paso recibe solo las secciones que necesita, además de las reglas generales."
                 right={
                   cfgOrigin && (
                     <Tag tone={cfgOrigin.origin === 'playbook' ? 'ok' : cfgOrigin.origin === 'preset' ? 'warn' : 'bad'}>
-                      {cfgOrigin.origin === 'playbook' ? 'Desde el playbook del equipo' : cfgOrigin.origin === 'preset' ? 'Preset de AdFlow' : 'Sin configuración'}
+                      {cfgOrigin.origin === 'playbook' ? 'Playbook del equipo' : cfgOrigin.origin === 'preset' ? 'Configuración predeterminada' : 'Sin configuración'}
                     </Tag>
                   )
                 }
@@ -218,7 +218,7 @@ export function SettingsView() {
 
         {tab === 'brain' && (
           <Card className="p-5">
-            <SectionTitle title="Claude Code" hint="AdFlow usa el Claude Code instalado en esta computadora con tu suscripción. Nunca ve tu contraseña." />
+            <SectionTitle title="Claude Code" hint="AdFlow usa Claude Code instalado en esta computadora con tu suscripción. AdFlow no tiene acceso a tus credenciales." />
             <div className="grid grid-cols-2 gap-4">
               <Field label="Modelo por defecto">
                 <Select value={s.claude.model} onChange={(v) => save({ ...s, claude: { ...s.claude, model: v } })} options={[{ value: 'opus', label: 'Opus' }, { value: 'sonnet', label: 'Sonnet' }]} />
@@ -239,7 +239,7 @@ export function SettingsView() {
                     <input className={inputCls} value={a.label} onChange={(e) => save({ ...s, claude: { ...s.claude, accounts: s.claude.accounts.map((x) => (x.id === a.id ? { ...x, label: e.target.value } : x)) } })} />
                     <input
                       className={cx(inputCls, 'font-mono text-[12px]')}
-                      placeholder="Sesión del sistema (sin carpeta)"
+                      placeholder="Sesión del sistema"
                       value={a.configDir ?? ''}
                       disabled={a.id === 'system'}
                       onChange={(e) => save({ ...s, claude: { ...s.claude, accounts: s.claude.accounts.map((x) => (x.id === a.id ? { ...x, configDir: e.target.value } : x)) } })}
@@ -270,7 +270,7 @@ export function SettingsView() {
                 Agregar cuenta
               </Button>
               <p className="mt-3 text-[11.5px] leading-relaxed text-faint">
-                Una cuenta administrada usa su propia carpeta de configuración de Claude Code (CLAUDE_CONFIG_DIR). Para iniciar sesión en ella, abre una terminal con esa variable y ejecuta <span className="font-mono">claude</span> una vez.
+                Cada cuenta adicional usa su propia carpeta de configuración de Claude Code (CLAUDE_CONFIG_DIR). Para iniciar sesión, define esa variable en una terminal y ejecuta <span className="font-mono">claude</span> una vez.
               </p>
             </div>
           </Card>
@@ -281,11 +281,11 @@ export function SettingsView() {
             <Card className="p-5">
               <SectionTitle
                 title="Proveedores por defecto"
-                hint="Cada episodio nuevo empieza con estos. Puedes cambiarlos por episodio en Preparación."
+                hint="Se aplican a los episodios nuevos. Puedes cambiarlos en la Preparación de cada episodio."
                 right={
                   <label className="no-drag flex items-center gap-2 text-[12.5px] text-mute">
                     <input type="checkbox" className="size-4 accent-[#7c5cff]" checked={s.allowPaidProviders} onChange={(e) => save({ ...s, allowPaidProviders: e.target.checked })} />
-                    Permitir proveedores con créditos
+                    Permitir proveedores que consumen créditos
                   </label>
                 }
               />
@@ -303,7 +303,7 @@ export function SettingsView() {
               </div>
             </Card>
             <Card className="p-5">
-              <SectionTitle title="Catálogo de conexiones" hint="Las que dicen «próximamente» se conectan en las siguientes fases. Ninguna gasta créditos sin tu confirmación." />
+              <SectionTitle title="Proveedores disponibles" hint="Ningún proveedor consume créditos sin tu confirmación." />
               <div className="grid grid-cols-2 gap-2">
                 {providers.map((p) => (
                   <div key={p.id} className="rounded-xl border border-line bg-panel-2/30 px-3.5 py-3">
@@ -321,7 +321,7 @@ export function SettingsView() {
               </div>
             </Card>
             <Card className="p-5">
-              <SectionTitle title="Claves de API" hint="Se guardan cifradas con el llavero de tu sistema y nunca salen de esta computadora." />
+              <SectionTitle title="Claves de API" hint="Se almacenan cifradas con el almacén de credenciales del sistema." />
               <div className="space-y-2">
                 {Object.entries(labels).map(([k, label]) => (
                   <SecretRow key={k} name={k} label={label} isSet={!!secrets[k]} onSaved={setSecrets} />
@@ -334,11 +334,11 @@ export function SettingsView() {
         {tab === 'queue' && (
           <Card className="p-5">
             <SectionTitle
-              title="Trabajo en paralelo"
-              hint="Cuántos episodios trabajan a la vez y, dentro de cada uno, cuántos ítems de cada paso se generan a la vez (una imagen, un clip o una frase de voz es un ítem)."
+              title="Procesamiento simultáneo"
+              hint="Cuántos episodios se procesan a la vez y cuántos elementos de cada paso (imágenes, clips o frases de voz) se generan en paralelo dentro de cada episodio."
             />
             <div className="mb-5 max-w-[260px]">
-              <Field label="Episodios a la vez" hint="En cualquier paso. Uno que espera tu aprobación no ocupa lugar.">
+              <Field label="Episodios simultáneos" hint="Los episodios pendientes de aprobación no cuentan.">
                 <Select
                   value={String(s.concurrency.episodes)}
                   onChange={(v) => save({ ...s, concurrency: { ...s.concurrency, episodes: Number(v) } })}
@@ -347,7 +347,7 @@ export function SettingsView() {
               </Field>
             </div>
             <div className="grid grid-cols-5 gap-4">
-              <Field label="Guion y Claude" hint="1 por episodio (fijo)">
+              <Field label="Guion" hint="1 por episodio">
                 <Select value="1" onChange={() => {}} options={[{ value: '1', label: '1' }]} disabled />
               </Field>
               {(
@@ -361,7 +361,7 @@ export function SettingsView() {
                   <Select
                     value={String(s.concurrency[k])}
                     onChange={(v) => save({ ...s, concurrency: { ...s.concurrency, [k]: Number(v) } })}
-                    options={[...[1, 2, 3, 4, 6, 8, 10].map((n) => ({ value: String(n), label: String(n) })), { value: '0', label: 'Todos a la vez' }]}
+                    options={[...[1, 2, 3, 4, 6, 8, 10].map((n) => ({ value: String(n), label: String(n) })), { value: '0', label: 'Sin límite' }]}
                   />
                 </Field>
               ))}
@@ -374,24 +374,26 @@ export function SettingsView() {
               </Field>
             </div>
             <p className="mt-3 text-[12px] text-faint">
-              Los renders se reparten la CPU de esta computadora: con más de uno a la vez, cada uno usa una parte de los núcleos. Solo conviene subirlo con una CPU de 8 núcleos o más
-              y 32 GB de RAM; si no, terminan igual o más tarde que uno detrás del otro. Con voces de HeyGen, una sola sesión de Claude genera todas las frases del
-              episodio (cuenta como un ítem). Más ítems a la vez no gastan más en total, pero llegan antes al límite de uso de Codex, ElevenLabs o Claude.
+              Cada render usa parte de la CPU. Aumentar este valor solo se recomienda con 8 núcleos o más y 32 GB de RAM; en equipos con menos recursos
+              no reduce el tiempo total. Con voces de HeyGen, todas las frases del episodio se generan en una sola sesión. Generar más elementos en paralelo
+              no aumenta el costo, pero alcanza antes los límites de uso de Codex, ElevenLabs o Claude.
             </p>
-            <Field label="Tu nombre (para el seguimiento del equipo)">
-              <input className={cx(inputCls, 'mt-4')} value={s.userName} onChange={(e) => save({ ...s, userName: e.target.value })} />
-            </Field>
+            <div className="mt-6 max-w-[420px]">
+              <Field label="Tu nombre" hint="Se muestra al equipo en el seguimiento de episodios.">
+                <input className={inputCls} value={s.userName} onChange={(e) => save({ ...s, userName: e.target.value })} />
+              </Field>
+            </div>
           </Card>
         )}
 
         {tab === 'diagnostics' && (
           <Card className="p-5">
             <SectionTitle
-              title="Diagnóstico de esta computadora"
-              hint="Qué está instalado y qué falta. No gasta créditos."
+              title="Diagnóstico del sistema"
+              hint="Comprueba que las herramientas necesarias estén instaladas. No consume créditos."
               right={
                 <Button size="sm" icon={<RefreshCw className="size-3.5" />} onClick={() => { setDiag(undefined); api.diagnostics().then(setDiag); }}>
-                  Revisar otra vez
+                  Volver a comprobar
                 </Button>
               }
             />
@@ -402,7 +404,7 @@ export function SettingsView() {
                   {d.ok ? <CheckCircle2 className="size-5 text-ok" /> : d.required ? <CircleAlert className="size-5 text-bad" /> : <CircleDashed className="size-5 text-warn" />}
                   <div className="min-w-0 flex-1">
                     <p className="text-[13px] font-semibold">
-                      {d.label} {d.required && !d.ok && <span className="text-[11px] font-normal text-bad">· necesario</span>}
+                      {d.label} {d.required && !d.ok && <span className="text-[11px] font-normal text-bad">· requerido</span>}
                     </p>
                     <p className="selectable truncate text-[12px] text-faint">{d.detail}</p>
                   </div>

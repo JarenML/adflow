@@ -36,7 +36,7 @@ export function syncTeamPlaybook(): Promise<PlaybookSyncStatus> {
         if (!abs) continue;
         if (fs.existsSync(abs) && sha256(fs.readFileSync(abs)) === f.sha256) continue;
         const buf = await fetchPlaybookFile(f.path);
-        if (sha256(buf) !== f.sha256) throw new Error(`${f.path} llegó incompleto; se reintenta en la próxima actualización.`);
+        if (sha256(buf) !== f.sha256) throw new Error(`${f.path} se descargó incompleto; se volverá a intentar en la próxima sincronización.`);
         fs.mkdirSync(path.dirname(abs), { recursive: true });
         fs.writeFileSync(`${abs}.tmp`, buf);
         fs.renameSync(`${abs}.tmp`, abs);

@@ -105,7 +105,7 @@ Responde en una línea cuántas voces escribiste.`,
     if (!got || (!got.public?.length && !got.private?.length)) {
       if (cached) return cacheOptions(cached);
       throw new Error(
-        `No se pudo leer el catálogo de HeyGen: ${res.error || res.text || 'sin respuesta'}. Revisa que el MCP de HeyGen esté conectado en Claude Code.`.slice(0, 400),
+        `No se pudo leer el catálogo de HeyGen: ${res.error || res.text || 'sin respuesta'}. Revisa que la integración de HeyGen esté conectada en Claude Code.`.slice(0, 400),
       );
     }
     const next: HeygenCache = { at: new Date().toISOString(), public: got.public ?? [], private: got.private ?? [], extra: cached?.extra ?? [] };
@@ -151,7 +151,7 @@ Si HeyGen responde que no existe o da error, escribe {"error": "<el mensaje de H
   if (!got?.voice_id) {
     throw new Error(`HeyGen no encontró la voz con ese ID: ${got?.error || res.error || res.text || 'sin respuesta'}`.slice(0, 300));
   }
-  if (got.status && got.status !== 'ACTIVE') throw new Error(`Esa voz de HeyGen no está lista para hablar (estado ${got.status}).`);
+  if (got.status && got.status !== 'ACTIVE') throw new Error(`Esa voz de HeyGen no está disponible (estado ${got.status}).`);
   const voice: RawVoice = { ...got, voice_id: voiceId };
   const base: HeygenCache = known ?? { at: new Date(0).toISOString(), public: [], private: [] };
   fs.writeFileSync(cache, JSON.stringify({ ...base, extra: [voice, ...(base.extra ?? []).filter((v) => v.voice_id !== voiceId)] }), 'utf8');
@@ -262,7 +262,7 @@ No descargues los audios: AdFlow lo hace. Responde en una línea qué pasó.`,
   const out = readJson<{ credits_before?: number; credits_after?: number; lines?: { id: string; audio_url?: string | null; error?: string | null }[] }>(resultFile);
   const result: HeygenSpeechResult = { files: {}, errors: {}, creditsBefore: out?.credits_before, creditsAfter: out?.credits_after };
   if (!out) {
-    result.error = `${res.error || res.text || 'Claude no dejó el resultado.'}`.slice(0, 400);
+    result.error = `${res.error || res.text || 'Claude no devolvió un resultado.'}`.slice(0, 400);
     return result;
   }
   fs.mkdirSync(opts.outDir, { recursive: true });

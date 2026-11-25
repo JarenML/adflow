@@ -9,7 +9,7 @@ const API = 'https://api.elevenlabs.io';
 async function fail(res: Response, what: string): Promise<never> {
   const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
   const detail = typeof body.detail === 'string' ? body.detail : body.detail ? JSON.stringify(body.detail) : '';
-  const hint = res.status === 401 ? ' (revisa la API key)' : res.status === 402 ? ' (la API de imagen y video necesita plan Pro o superior)' : '';
+  const hint = res.status === 401 ? ' (revisa la clave de API)' : res.status === 402 ? ' (la API de imagen y video necesita plan Pro o superior)' : '';
   throw new Error(`ElevenLabs no pudo ${what}: ${res.status}${hint}${detail ? ` · ${detail.slice(0, 300)}` : ''}`);
 }
 
@@ -114,5 +114,5 @@ export async function elevenClip(job: ClipJob): Promise<string> {
       return job.outFile;
     }
   }
-  throw new Error('El clip tardó más de 15 minutos; vuelve a intentarlo o súbelo a mano.');
+  throw new Error('El clip tardó más de 15 minutos. Vuelve a intentarlo o súbelo manualmente.');
 }

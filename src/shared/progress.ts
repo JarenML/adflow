@@ -13,10 +13,10 @@ export const TEAM_STATUS_LABEL: Record<TeamStatus, string> = {
 };
 
 export const TEAM_STATUS_HINT: Record<TeamStatus, string> = {
-  pendiente: 'Nadie lo empezó',
-  en_produccion: 'Alguien lo está produciendo',
-  terminado: 'Video final aprobado, falta publicarlo',
-  publicado: 'Ya salió en redes',
+  pendiente: 'Sin iniciar',
+  en_produccion: 'En producción por el equipo',
+  terminado: 'Video final aprobado, pendiente de publicación',
+  publicado: 'Publicado en redes',
 };
 
 export function toTeamStatus(e: Pick<EpisodeState, 'steps' | 'current' | 'publication'>): TeamProgress {

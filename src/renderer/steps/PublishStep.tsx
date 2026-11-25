@@ -112,8 +112,8 @@ export function PublishStep({ episode }: { episode: EpisodeState }) {
             ) : (
               <Empty
                 icon={<Megaphone className="size-5" />}
-                title="Claude escribe el texto del anuncio y arma el enlace"
-                hint="Con la frase y las etiquetas del caso (que no van en el video) y el enlace con su utm_content."
+                title="Claude redacta el texto del anuncio y genera el enlace"
+                hint="Incluye la frase y las etiquetas del caso, y el enlace con su parámetro de seguimiento."
                 action={
                   <Button variant="primary" icon={<Wand2 className="size-4" />} onClick={() => api.act(episode.id, { step: 'publish', type: 'adCopy' })}>
                     Escribir texto del anuncio
@@ -125,7 +125,7 @@ export function PublishStep({ episode }: { episode: EpisodeState }) {
             <Card className="p-5">
               <SectionTitle
                 title="Texto del anuncio"
-                hint="Pide cambios en el chat de la derecha."
+                hint="Solicita cambios en el chat lateral."
                 right={
                   <Button size="sm" icon={<RotateCcw className="size-3.5" />} disabled={st === 'working'} onClick={() => api.act(episode.id, { step: 'publish', type: 'adCopy' })}>
                     Otra versión
@@ -142,7 +142,7 @@ export function PublishStep({ episode }: { episode: EpisodeState }) {
           )}
 
           <Card className="p-5">
-            <SectionTitle title="Dónde se publicó" hint="Al marcarlo, el episodio pasa a «Publicado» para todo el equipo." />
+            <SectionTitle title="Dónde se publicó" hint="Al marcarlo, el episodio aparecerá como «Publicado» para todo el equipo." />
             <div className="grid grid-cols-[1fr_160px] gap-4">
               <Field label="Red">
                 <Select value={network} onChange={setNetwork} options={NETWORKS.map((n) => ({ value: n, label: n }))} />

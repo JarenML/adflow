@@ -76,7 +76,7 @@ export function Dashboard({ onOpen, onCreate }: { onOpen: (id: string) => void; 
       <div className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Jobs</h1>
-          <p className="mt-1 text-[13px] text-mute">Lo que estás produciendo. Varios episodios avanzan a la vez; tú apruebas cada paso.</p>
+          <p className="mt-1 text-[13px] text-mute">Episodios en producción. Se procesan en paralelo y cada paso requiere tu aprobación.</p>
         </div>
         <Button variant="primary" icon={<Plus className="size-4" />} onClick={onCreate}>
           Crear
@@ -102,7 +102,7 @@ export function Dashboard({ onOpen, onCreate }: { onOpen: (id: string) => void; 
             filter === 'waiting' ? 'border-warn/50 bg-warn/10 text-warn' : counts.waiting ? 'border-warn/30 text-warn hover:bg-warn/5' : 'border-line text-faint',
           )}
         >
-          <BellDot className="size-3.5" /> Esperando por ti <span className="ml-0.5">{counts.waiting}</span>
+          <BellDot className="size-3.5" /> Pendientes de revisión <span className="ml-0.5">{counts.waiting}</span>
         </button>
       </div>
 
@@ -110,7 +110,7 @@ export function Dashboard({ onOpen, onCreate }: { onOpen: (id: string) => void; 
         <Empty
           icon={<Library className="size-5" />}
           title="Aún no hay episodios en producción"
-          hint="Empieza uno en Crear: eliges el episodio, cómo se produce y Claude escribe el guion."
+          hint="Inicia uno desde Crear."
           action={
             <Button variant="primary" icon={<ArrowRight className="size-4" />} onClick={onCreate}>
               Ir a Crear

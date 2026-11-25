@@ -85,16 +85,16 @@ export default function App() {
         </nav>
         {appInfo?.readyVersion && (
           <div className="mx-3 rounded-xl border border-brand/30 bg-brand/10 p-3">
-            <p className="text-[12px] font-medium text-ink">v{appInfo.readyVersion} lista</p>
+            <p className="text-[12px] font-medium text-ink">Versión {appInfo.readyVersion} lista</p>
             <p className="mt-0.5 text-[11px] text-mute">
-              {running ? 'Se instala al cerrar AdFlow. Para reiniciar ahora, espera a que terminen las tareas.' : 'Se instala al cerrar AdFlow, o ahora:'}
+              {running ? 'Se instalará al cerrar AdFlow. Para instalarla ahora, espera a que terminen las tareas en curso.' : 'Se instalará al cerrar AdFlow, o puedes instalarla ahora.'}
             </p>
             <button
               onClick={() => api.restartToUpdate()}
               disabled={running > 0}
               className="no-drag mt-2 w-full rounded-lg bg-brand px-3 py-1.5 text-[12px] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Reiniciar ahora
+              Reiniciar e instalar
             </button>
           </div>
         )}

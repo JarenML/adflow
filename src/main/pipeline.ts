@@ -78,8 +78,8 @@ function keys(): Record<string, string> {
 /** Why a provider cannot be used now (not connected, credits not allowed, key missing), or null. */
 export function providerBlock(providerId: string, allowPaid: boolean, secrets: Record<string, string>): string | null {
   const p = provider(providerId);
-  if (!p?.implemented) return `${p?.name ?? providerId} todavía no está conectado en AdFlow.`;
-  if (p.billing === 'credits' && !allowPaid) return `${p.name} gasta créditos: actívalo en Ajustes → Proveedores («Permitir proveedores con créditos»).`;
+  if (!p?.implemented) return `${p?.name ?? providerId} aún no está disponible en AdFlow.`;
+  if (p.billing === 'credits' && !allowPaid) return `${p.name} consume créditos. Habilítalo en Ajustes → Proveedores.`;
   if (p.secret && !secrets[p.secret]) return `Falta la ${SECRET_LABELS[p.secret] ?? p.secret} en Ajustes → Proveedores.`;
   return null;
 }
@@ -124,7 +124,7 @@ export class Pipeline {
       let changed = false;
       for (const id of STEP_IDS) {
         if (e.steps[id].status === 'working') {
-          e.steps[id] = { ...e.steps[id], status: 'error', error: 'Se interrumpió (la app se cerró).' };
+          e.steps[id] = { ...e.steps[id], status: 'error', error: 'Se interrumpió porque AdFlow se cerró.' };
           changed = true;
         }
       }
@@ -174,7 +174,7 @@ export class Pipeline {
   get(id: string): EpisodeState {
     const dir = this.dirs.get(id);
     const e = dir ? loadEpisode(dir) : null;
-    if (!e) throw new Error(`No existe el episodio ${id}`);
+    if (!e) throw new Error(`No se encontró el episodio ${id}.`);
     return e;
   }
 
@@ -207,7 +207,7 @@ export class Pipeline {
   /** Creates (or opens) the local episode of a source episode and claims it in the source. */
   async createFromSource(sourceEpisodeId: string): Promise<EpisodeState> {
     const item = (await this.library()).find((i) => i.id === sourceEpisodeId);
-    if (!item) throw new Error('Ese episodio ya no está en la fuente.');
+    if (!item) throw new Error('Este episodio ya no está disponible.');
     if (item.episodeId) return this.get(item.episodeId);
     const settings = loadSettings();
     const pb = activePlaybook(settings);
@@ -250,7 +250,7 @@ export class Pipeline {
     // An episode made by hand that already has its script starts at the script review.
     if (fs.existsSync(path.join(dir, 'escenas.json'))) {
       e.steps.prep = { status: 'approved', updatedAt: now() };
-      e.steps.script = { status: 'review', updatedAt: now(), note: 'Guion guardado del episodio: revísalo y apruébalo para seguir.' };
+      e.steps.script = { status: 'review', updatedAt: now(), note: 'Se cargó el guion guardado del episodio. Revísalo y apruébalo para continuar.' };
       e.current = 'script';
     }
     this.dirs.set(e.id, dir);
@@ -374,9 +374,9 @@ export class Pipeline {
     if (!guion) return;
     try {
       await src.saveScript(activePlaybook(loadSettings()), e.source.episodeId, { guion, escenas: read('escenas.json') });
-      this.activity(id, 'script', 'info', 'Guion guardado en el admin del equipo');
+      this.activity(id, 'script', 'info', 'Guion guardado en el panel de administración');
     } catch (err) {
-      this.activity(id, 'script', 'error', `No se pudo guardar el guion en el admin: ${String((err as Error)?.message ?? err)}`);
+      this.activity(id, 'script', 'error', `No se pudo guardar el guion en el panel de administración: ${String((err as Error)?.message ?? err)}`);
     }
   }
 
@@ -624,7 +624,7 @@ export class Pipeline {
     const prov = e.providers.image;
     const info = provider(prov);
     if (!info?.implemented) {
-      this.setStatus(id, 'images', 'error', { error: `${info?.name ?? prov} todavía no está conectado en AdFlow.` });
+      this.setStatus(id, 'images', 'error', { error: `${info?.name ?? prov} aún no está disponible en AdFlow.` });
       return;
     }
     const list = this.images(id).filter((i) => (only ? only.includes(i.sceneId) : !i.exists || i.status === 'error'));
@@ -708,11 +708,11 @@ export class Pipeline {
     const scenes = this.clipScenes(id);
     if (!scenes.length) {
       writeJson(this.videoPromptsFile(id), { clips: [] });
-      this.activity(id, 'videos', 'info', 'El guion no tiene escenas con clip: todas van como imagen con movimiento.');
+      this.activity(id, 'videos', 'info', 'El guion no tiene escenas con clip; todas se mostrarán como imagen con movimiento.');
       this.setStatus(id, 'videos', 'review', { error: undefined, note: 'El guion no lleva clips de video.' });
       return;
     }
-    this.activity(id, 'videos', 'info', `Clips del guion: ${scenes.map((s) => s.id).join(', ')}. Claude escribe sus prompts.`);
+    this.activity(id, 'videos', 'info', `Clips del guion: ${scenes.map((s) => s.id).join(', ')}. Claude está escribiendo sus prompts.`);
     await this.brainStep(id, 'videos', P.videosPrompt(scenes), { fresh: true });
     const missing = this.syncClipList(id);
     if (missing.length) this.setStatus(id, 'videos', 'error', { error: `Falta el prompt de ${missing.join(', ')}` });
@@ -731,7 +731,7 @@ export class Pipeline {
 
   private async addClip(id: string, sceneId: string): Promise<void> {
     this.setSceneClip(id, sceneId, true);
-    this.activity(id, 'videos', 'info', `${sceneId} pasa a ser clip en el guion. Claude escribe su prompt.`);
+    this.activity(id, 'videos', 'info', `${sceneId} ahora es un clip. Claude está escribiendo su prompt.`);
     const scene = this.clipScenes(id).find((s) => s.id === sceneId);
     if (!scene) return;
     if (!fs.existsSync(this.videoPromptsFile(id))) writeJson(this.videoPromptsFile(id), { clips: [] });
@@ -746,7 +746,7 @@ export class Pipeline {
     const state = this.clipState(id);
     delete state[sceneId];
     writeJson(this.clipStateFile(id), state);
-    this.activity(id, 'videos', 'info', `${sceneId} vuelve a ser imagen con movimiento (su clip, si había, queda en la carpeta video/).`);
+    this.activity(id, 'videos', 'info', `${sceneId} ahora es una imagen con movimiento. Su clip anterior, si lo había, se conserva en la carpeta video/.`);
     this.update(id, () => {});
   }
 
@@ -813,7 +813,7 @@ export class Pipeline {
     const e = this.get(id);
     const cfg = { provider: e.providers.video, model: 'veo-3.1-fast', durationS: 4, resolution: '1080p' as const, ...e.videoConfig };
     const generates = cfg.provider === 'elevenlabs-video' || cfg.provider === 'elevenlabs-mcp';
-    const blocked = generates ? providerBlock(cfg.provider, loadSettings().allowPaidProviders, keys()) : 'Este proveedor de video no genera desde AdFlow: sube el clip a mano.';
+    const blocked = generates ? providerBlock(cfg.provider, loadSettings().allowPaidProviders, keys()) : 'Este proveedor no permite generar desde AdFlow. Sube el clip manualmente.';
     if (blocked) {
       this.setStatus(id, 'videos', 'error', { error: blocked });
       return;
@@ -840,7 +840,7 @@ export class Pipeline {
       await Promise.all(
         clips.map((c) =>
           this.queue.add(id, 'videos', 'clip', `Clip ${c.sceneId} (MCP)`, async (signal) => {
-            this.activity(id, 'videos', 'tool', `Claude genera el clip ${c.sceneId} con el MCP de ElevenLabs`);
+            this.activity(id, 'videos', 'tool', `Generando el clip ${c.sceneId} con ElevenLabs`);
             const res = await mcpClip({
               dir: e.dir,
               sceneId: c.sceneId,
@@ -881,7 +881,7 @@ export class Pipeline {
     await Promise.all(
       clips.map((c) =>
         this.queue.add(id, 'videos', 'clip', `Clip ${c.sceneId}`, async (signal) => {
-          this.activity(id, 'videos', 'tool', `ElevenLabs genera el clip ${c.sceneId}`);
+          this.activity(id, 'videos', 'tool', `Generando el clip ${c.sceneId} con ElevenLabs`);
           try {
             await elevenClip({
               key: keys().elevenlabs,
@@ -933,7 +933,7 @@ export class Pipeline {
     };
     // An old take (the script changed after it) or a missing one never reaches the video.
     const pending = this.narration(id).filter(needsTake);
-    if (pending.length) return fail(`${voiceProblem(pending)} Vuelve a Voz del narrador antes de renderizar.`);
+    if (pending.length) return fail(`${voiceProblem(pending)} Revisa la Voz del narrador antes de renderizar.`);
     this.setStatus(id, 'render', 'working', { error: undefined });
 
     // 1. The project, with the episode's latest images, clips and voices.
@@ -975,7 +975,7 @@ export class Pipeline {
     };
     let res = await render();
     if (!res.ok && mode !== 'rerender') {
-      log('El render falló: Claude lo corrige', 'info');
+      log('El render falló. Claude está corrigiendo el error', 'info');
       await brain(P.renderFixPrompt(res.error ?? ''));
       res = await render();
     }
@@ -1048,7 +1048,7 @@ export class Pipeline {
 
   async previewVoice(id: string, text: string): Promise<{ url?: string; error?: string }> {
     const e = this.get(id);
-    if (!e.voice) return { error: 'Elige una voz primero.' };
+    if (!e.voice) return { error: 'Elige una voz para continuar.' };
     const blocked = providerBlock(e.voice.provider, loadSettings().allowPaidProviders, keys());
     if (blocked) return { error: blocked };
     if (e.voice.provider === 'heygen-voice') {
@@ -1075,7 +1075,7 @@ export class Pipeline {
     const stoppedAt = plan.fits < requested.length ? requested[plan.fits].id : null;
     if (!lines.length) {
       this.setStatus(id, 'voice', 'error', {
-        error: `Límite de ${limit} crédito(s) premium de HeyGen: ${requested[0].id} ya lo pasaría (hasta ${heygenMaxCredits(requested[0].text.length)}). Sube el límite.`,
+        error: `${requested[0].id} superaría el límite de ${limit} crédito(s) premium de HeyGen (hasta ${heygenMaxCredits(requested[0].text.length)}). Aumenta el límite.`,
       });
       return;
     }
@@ -1088,7 +1088,7 @@ export class Pipeline {
         'info',
         `Límite de esta ejecución: ${limit} crédito(s) premium. ${plan.allowedChars} caracteres caben (como máximo ${heygenMaxCredits(plan.allowedChars)}).${stoppedAt ? ` Se detiene antes de ${stoppedAt}: no se envía.` : ''}`,
       );
-      this.activity(id, 'voice', 'tool', `Claude genera ${lines.length} frase(s) con el MCP de HeyGen (una llamada por frase)`);
+      this.activity(id, 'voice', 'tool', `Generando ${lines.length} frase(s) con HeyGen (una solicitud por frase)`);
       const r = await heygenSpeech({
         dir: e.dir,
         outDir: path.join(e.dir, 'voces', '.heygen'),
@@ -1121,7 +1121,7 @@ export class Pipeline {
       this.update(id, (x) => x.costs.push({ at: now(), step: 'voice', provider: 'heygen-voice', label: `Voz del narrador (HeyGen)${spent !== null ? ` · ${spent} créditos premium` : ''}` }));
     });
     if (stoppedAt) {
-      this.setStatus(id, 'voice', 'error', { error: `Límite de ${limit} crédito(s) premium de HeyGen: se detuvo antes de ${stoppedAt}. Sube el límite o genera las que faltan.` });
+      this.setStatus(id, 'voice', 'error', { error: `Límite de ${limit} crédito(s) premium de HeyGen: se detuvo antes de ${stoppedAt}. Aumenta el límite para generar las frases restantes.` });
       return;
     }
     const missing = this.narration(id).filter(needsTake).length;
@@ -1131,7 +1131,7 @@ export class Pipeline {
   private async generateVoices(id: string, lineIds?: string[]): Promise<void> {
     const e = this.get(id);
     if (!e.voice) {
-      this.setStatus(id, 'voice', 'error', { error: 'Elige una voz primero.' });
+      this.setStatus(id, 'voice', 'error', { error: 'Elige una voz para continuar.' });
       return;
     }
     const blocked = providerBlock(e.voice.provider, loadSettings().allowPaidProviders, keys());
@@ -1158,7 +1158,7 @@ export class Pipeline {
       this.activity(id, 'voice', 'info', `Límite de esta ejecución: ${limit.toLocaleString('es-PE')} créditos (estimado de todas las frases: ${plan.total.toLocaleString('es-PE')}).`);
       if (stoppedAt) {
         const cost = lineCredits(lines[plan.fits].text);
-        this.activity(id, 'voice', 'error', `Se detiene en ${stoppedAt}: costaría ${cost} créditos y llevaría la ejecución a ${plan.allowed + cost} de ${limit}. No se envía.`);
+        this.activity(id, 'voice', 'error', `Se detuvo en ${stoppedAt}: costaría ${cost} créditos y superaría el límite (${plan.allowed + cost} de ${limit}).`);
       }
     }
     // One queue job per line: the episode's voice limit decides how many go at the same time.
@@ -1180,12 +1180,12 @@ export class Pipeline {
     if (paid && spent) {
       const after = key && before !== null ? await elevenUsedCredits(key).catch(() => null) : null;
       const real = before !== null && after !== null ? after - before : null;
-      this.activity(id, 'voice', 'result', `Gastado en esta ejecución: ≈ ${spent.toLocaleString('es-PE')} créditos${real !== null ? ` (ElevenLabs registra ${real.toLocaleString('es-PE')})` : ''} de un límite de ${limit.toLocaleString('es-PE')}.`);
+      this.activity(id, 'voice', 'result', `Consumido en esta ejecución: ≈ ${spent.toLocaleString('es-PE')} créditos${real !== null ? ` (ElevenLabs registra ${real.toLocaleString('es-PE')})` : ''} de un límite de ${limit.toLocaleString('es-PE')}.`);
       this.update(id, (x) => x.costs.push({ at: now(), step: 'voice', provider: 'elevenlabs', label: `Voz del narrador · ${real ?? spent} créditos` }));
     }
     const missing = this.narration(id).filter(needsTake).length;
     if (stoppedAt) {
-      this.setStatus(id, 'voice', 'error', { error: `Límite de ${limit.toLocaleString('es-PE')} créditos: se detuvo en ${stoppedAt}. Sube el límite o genera de nuevo para completar.` });
+      this.setStatus(id, 'voice', 'error', { error: `Límite de ${limit.toLocaleString('es-PE')} créditos: se detuvo en ${stoppedAt}. Aumenta el límite y vuelve a generar para completar.` });
       return;
     }
     this.setStatus(id, 'voice', missing ? 'error' : 'review', missing ? { error: `${missing} frase(s) sin audio o con el texto cambiado` } : {});
@@ -1197,7 +1197,7 @@ function voiceProblem(lines: NarrationLine[]): string {
   const changed = lines.filter((l) => l.stale).map((l) => l.id);
   const missing = lines.filter((l) => !l.file).map((l) => l.id);
   return [
-    changed.length && `El texto cambió en el guion: ${changed.join(', ')} (genera de nuevo su audio).`,
+    changed.length && `El texto cambió en el guion: ${changed.join(', ')}. Vuelve a generar su audio.`,
     missing.length && `Sin audio: ${missing.join(', ')}.`,
   ]
     .filter(Boolean)

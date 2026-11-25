@@ -147,7 +147,7 @@ export function ScriptStep({ episode }: { episode: EpisodeState }) {
       <Empty
         icon={<FileText className="size-5" />}
         title={st === 'error' ? 'El guion no se pudo generar' : 'Todavía no hay guion'}
-        hint={episode.steps.script.error ?? data?.error ?? 'Claude escribirá guion.md y escenas.json con el formato del playbook.'}
+        hint={episode.steps.script.error ?? data?.error ?? 'Claude escribirá el guion y las escenas con el formato del playbook.'}
         action={
           <Button variant="primary" icon={<Wand2 className="size-4" />} onClick={() => api.act(episode.id, { step: 'script', type: 'generate' })}>
             Generar guion
@@ -187,8 +187,8 @@ export function ScriptStep({ episode }: { episode: EpisodeState }) {
             <p className="mt-3 flex items-center gap-1.5 text-[12.5px] text-mute">
               <Clapperboard className="size-3.5 text-warn" />
               {clipIds.length
-                ? `Clips de video: ${clipIds.join(', ')} (${clipIds.length} · ≈ ${(clipIds.length * 3640).toLocaleString('es-PE')} créditos de ElevenLabs a 4 s). El resto de escenas reales van como imagen con movimiento.`
-                : 'Sin clips de video: todas las escenas reales van como imagen con movimiento.'}
+                ? `Clips de video: ${clipIds.join(', ')} (${clipIds.length} · ≈ ${(clipIds.length * 3640).toLocaleString('es-PE')} créditos de ElevenLabs a 4 s). Las demás escenas se mostrarán como imagen con movimiento.`
+                : 'Sin clips de video: todas las escenas se mostrarán como imagen con movimiento.'}
             </p>
           );
         })()}

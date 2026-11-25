@@ -113,7 +113,7 @@ export function CreateView({
       <div className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Crear</h1>
-          <p className="mt-1 text-[13px] text-mute">Empieza un video: elige el episodio y cómo se produce. Después Claude escribe el guion.</p>
+          <p className="mt-1 text-[13px] text-mute">Elige un episodio y configura su producción. Después, Claude escribirá el guion.</p>
         </div>
         <Button variant="ghost" icon={<RefreshCw className={cx('size-4', loading && 'animate-spin')} />} onClick={() => void reload()}>
           Actualizar
@@ -126,7 +126,7 @@ export function CreateView({
 
       <div className="space-y-6">
         <Card className="p-5">
-          <SectionTitle title="Episodio" hint="Episodios de Robles.AI que nadie ha empezado." right={<Tag tone="brand">Paso 1 de 7 · Preparación</Tag>} />
+          <SectionTitle title="Episodio" hint="Episodios de Robles.AI pendientes de producción." right={<Tag tone="brand">Paso 1 de 7 · Preparación</Tag>} />
 
           {loadError ? (
             <div className="flex items-start gap-3 rounded-xl border border-bad/30 bg-bad/5 px-4 py-3">
@@ -143,7 +143,7 @@ export function CreateView({
             <Empty
               icon={<Library className="size-5" />}
               title="No hay episodios pendientes"
-              hint="Todos los episodios ya los tiene alguien. Agrega uno nuevo en el admin (Producción de redes) y actualiza."
+              hint="Todos los episodios están asignados. Agrega uno nuevo en Producción de redes y pulsa Actualizar."
               action={
                 <Button icon={<Library className="size-4" />} onClick={onLibrary}>
                   Ver la biblioteca
@@ -176,12 +176,12 @@ export function CreateView({
                     className="no-drag mt-3 flex items-center gap-1.5 text-[12.5px] font-medium text-brand-2 hover:underline"
                   >
                     <FileText className="size-3.5" />
-                    Lo que Claude leerá de este episodio
+                    Información del episodio para Claude
                     {showBrief ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
                   </button>
                   {showBrief && (
                     <div className="selectable mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-line bg-panel px-3.5 py-3 text-[12px] leading-relaxed text-mute">
-                      {brief?.error ? <span className="text-bad">{brief.error}</span> : (brief?.text ?? 'Cargando…') || 'Este episodio no tiene brief: Claude usará el título y propondrá lo que falte.'}
+                      {brief?.error ? <span className="text-bad">{brief.error}</span> : (brief?.text ?? 'Cargando…') || 'Este episodio no tiene brief. Claude usará el título y completará el resto.'}
                     </div>
                   )}
                 </div>
@@ -197,7 +197,7 @@ export function CreateView({
       <div className="fixed bottom-0 left-[216px] right-0 z-20 border-t border-line bg-[#0b0d12]/95 backdrop-blur">
         <div className="mx-auto flex max-w-[1180px] items-center justify-between gap-4 px-8 py-3.5">
           <p className="min-w-0 truncate text-[12.5px] text-mute">
-            {error ? <span className="text-bad">{error}</span> : item ? <>Listo para empezar: <span className="font-medium text-ink">«{item.title}»</span> · {item.businessType}</> : 'Elige un episodio para seguir.'}
+            {error ? <span className="text-bad">{error}</span> : item ? <>Listo para empezar: <span className="font-medium text-ink">«{item.title}»</span> · {item.businessType}</> : 'Elige un episodio para continuar.'}
           </p>
           <Button variant="primary" size="lg" disabled={!item || !choice} loading={starting} onClick={() => void next()}>
             Siguiente: Guion <ArrowRight className="size-4" />

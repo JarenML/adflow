@@ -39,7 +39,7 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
 
   const config = (
     <Card className="p-5">
-      <SectionTitle title="Configuración de los clips" hint={prov?.billing === 'credits' && !settings?.allowPaidProviders ? 'Este proveedor gasta créditos: actívalo en Ajustes → Proveedores para generar desde aquí.' : 'Nada se genera hasta que presiones Generar.'} right={prov && billingTag(prov, !!settings?.allowPaidProviders)} />
+      <SectionTitle title="Configuración de los clips" hint={prov?.billing === 'credits' && !settings?.allowPaidProviders ? 'Este proveedor consume créditos. Habilítalo en Ajustes → Proveedores para generar desde aquí.' : 'No se generará nada hasta que pulses Generar.'} right={prov && billingTag(prov, !!settings?.allowPaidProviders)} />
       <div className="grid grid-cols-[1.7fr_1fr_0.8fr_1fr] gap-4">
         <Field label="Generar con">
           <Select
@@ -100,7 +100,7 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
         <Card className="p-5">
           <SectionTitle
             title="Este guion no lleva clips de video"
-            hint="Todas las escenas reales van como imagen con movimiento en el montaje."
+            hint="Todas las escenas se mostrarán como imagen con movimiento."
             right={
               <Button size="sm" variant="primary" icon={<ArrowRight className="size-3.5" />} disabled={st === 'approved'} onClick={() => api.act(episode.id, { step: 'videos', type: 'approve' })}>
                 {st === 'approved' ? 'Aprobado' : 'Aprobar y seguir'}
@@ -119,7 +119,7 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
         {config}
         {st === 'working' ? (
           <Card className="p-5">
-            <SectionTitle title="Claude escribe los prompts de los clips del guion" hint="Las escenas que el guion marcó como clip (el gancho y los diálogos). Aparecen aquí en un momento." />
+            <SectionTitle title="Claude está escribiendo los prompts de los clips" hint="Escenas marcadas como clip en el guion (gancho y diálogos). Aparecerán aquí en unos momentos." />
             <div className="flex gap-3 overflow-hidden">
               {[0, 1, 2].map((i) => (
                 <div key={i} className="shimmer aspect-[9/16] w-[190px] shrink-0 rounded-xl" />
@@ -131,8 +131,8 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
           // for episodes approved before that existed).
           <Empty
             icon={<Clapperboard className="size-5" />}
-            title={episode.steps.videos.error ? 'No se pudieron preparar los clips' : 'Faltan los prompts de los clips del guion'}
-            hint={episode.steps.videos.error ?? 'Se preparan solos al aprobar Imágenes: las escenas que el guion marcó como clip, con su prompt.'}
+            title={episode.steps.videos.error ? 'No se pudieron preparar los clips' : 'Faltan los prompts de los clips'}
+            hint={episode.steps.videos.error ?? 'Se preparan automáticamente al aprobar Imágenes.'}
             action={
               <Button variant="primary" icon={<Wand2 className="size-4" />} onClick={() => api.act(episode.id, { step: 'videos', type: 'prepare' })}>
                 {episode.steps.videos.error ? 'Reintentar' : 'Preparar ahora'}
@@ -151,7 +151,7 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
       <Card className="p-5">
         <SectionTitle
           title={`${ready} de ${list.length} clip${list.length === 1 ? '' : 's'} listo${list.length === 1 ? '' : 's'}`}
-          hint={`Las escenas que el guion marcó como clip. ${canGenerate ? 'Genera cada una o súbela si la hiciste fuera.' : 'Genera los clips en tu herramienta (prompts en prompts_firefly.md) y súbelos aquí.'}`}
+          hint={`Escenas marcadas como clip en el guion. ${canGenerate ? 'Genera cada una o sube un clip propio.' : 'Genera los clips con tu herramienta usando el prompt de cada escena y súbelos aquí.'}`}
           right={
             <div className="flex gap-2">
               {/* Hidden when every clip exists: an empty list would regenerate them all. */}
@@ -178,7 +178,7 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
               onImport={() => api.act(episode.id, { step: 'videos', type: 'import', sceneId: c.sceneId })}
               onAsk={() => onTarget({ sceneId: c.sceneId, label: `clip ${c.sceneId}` })}
               onRemove={() => {
-                if (window.confirm(`¿Quitar el clip de ${c.sceneId}? La escena vuelve a ser imagen con movimiento en el guion.`)) void api.act(episode.id, { step: 'videos', type: 'removeClip', sceneId: c.sceneId });
+                if (window.confirm(`¿Quitar el clip de ${c.sceneId}? La escena pasará a ser una imagen con movimiento.`)) void api.act(episode.id, { step: 'videos', type: 'removeClip', sceneId: c.sceneId });
               }}
             />
           ))}
@@ -235,7 +235,7 @@ function ClipCard({
         ) : (
           !c.url && (
             <span className="absolute inset-x-0 bottom-3 mx-auto w-fit rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-mute">
-              {c.status === 'error' ? 'No se generó' : 'Sin generar'}
+              {c.status === 'error' ? 'Error al generar' : 'Sin generar'}
             </span>
           )
         )}
@@ -265,7 +265,7 @@ function ClipCard({
           {c.exists ? 'Regenerar' : 'Generar'}
         </Button>
         <div className="flex items-center gap-1">
-          <Button size="sm" variant="ghost" className={iconBtn} icon={<Upload className="size-3.5" />} title={c.exists ? 'Reemplazar con un clip tuyo' : 'Subir un clip hecho fuera'} aria-label="Subir clip" onClick={onImport} />
+          <Button size="sm" variant="ghost" className={iconBtn} icon={<Upload className="size-3.5" />} title={c.exists ? 'Reemplazar con un clip tuyo' : 'Subir un clip propio'} aria-label="Subir clip" onClick={onImport} />
           <Button size="sm" variant="ghost" className={iconBtn} icon={<MessageSquare className="size-3.5" />} title="Corregir el prompt con Claude" aria-label="Corregir prompt" onClick={onAsk} />
           {c.flowUrl && <Button size="sm" variant="ghost" className={iconBtn} icon={<ExternalLink className="size-3.5" />} title="Abrir en ElevenLabs" aria-label="Abrir en ElevenLabs" onClick={() => api.openPath(c.flowUrl!)} />}
           <Button
@@ -274,7 +274,7 @@ function ClipCard({
             className={iconBtn}
             icon={<ImageIcon className="size-3.5" />}
             disabled={working || locked}
-            title="Quitar el clip: la escena vuelve a ser imagen con movimiento (se cambia en el guion)"
+            title="Quitar el clip (la escena pasará a ser una imagen con movimiento)"
             aria-label="Quitar clip"
             onClick={onRemove}
           />
