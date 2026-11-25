@@ -77,17 +77,14 @@ export function SettingsView() {
     <div className="flex h-[calc(100%-2.5rem)] flex-col">
       <div className="drag mx-auto w-full max-w-[1000px] shrink-0 px-8 pt-3">
       <div className="flex items-end justify-between gap-6 border-b border-line">
-        <div className="flex items-baseline gap-3 pb-2.5">
-          <h1 className="text-2xl font-semibold tracking-tight">Ajustes</h1>
-          {saved && <p className="text-[12px] text-ok">Guardado</p>}
-        </div>
-      <nav className="flex gap-1">
+        <h1 className="shrink-0 pb-2.5 text-2xl font-semibold tracking-tight">Ajustes</h1>
+      <nav className="flex min-w-0 gap-0.5">
         {tabs.map(([id, label, Icon]) => (
           <button
             key={id}
             onClick={() => setTab(id)}
             className={cx(
-              'no-drag -mb-px flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-[13px] font-medium transition-colors',
+              'no-drag -mb-px flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors',
               tab === id ? 'border-brand text-ink' : 'border-transparent text-mute hover:text-ink',
             )}
           >
@@ -97,6 +94,18 @@ export function SettingsView() {
         ))}
       </nav>
       </div>
+      </div>
+
+      {/* Floating, so it never pushes the tabs around. */}
+      <div
+        role="status"
+        className={cx(
+          'pointer-events-none fixed bottom-5 right-6 z-30 flex items-center gap-2 rounded-lg border border-ok/30 bg-panel-2 px-3.5 py-2 text-[12.5px] font-medium text-ok shadow-lg transition-all duration-200',
+          saved ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0',
+        )}
+      >
+        <CheckCircle2 className="size-4" />
+        Cambios guardados
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
