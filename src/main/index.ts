@@ -148,7 +148,7 @@ function registerIpc() {
     const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
     return r.canceled ? null : r.filePaths[0];
   });
-  handle('appInfo', () => ({ version: app.getVersion(), ...updateState() }));
+  handle('appInfo', () => ({ version: app.getVersion(), packaged: app.isPackaged, ...updateState() }));
   handle('restartToUpdate', () => restartToUpdate());
   handle('claudeUsage', () => claudeUsage());
   handle('defaults', (cap) => loadSettings().defaults[cap as keyof ReturnType<typeof loadSettings>['defaults']]);

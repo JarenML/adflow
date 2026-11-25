@@ -59,7 +59,12 @@ export default function App() {
           <span className="text-[16px] font-semibold tracking-tight">
             Ad<span className="brand-text">Flow</span>
           </span>
-          {appInfo && <span className="font-mono text-[11px] text-mute">v{appInfo.version}</span>}
+          {appInfo && (
+            <span className="font-mono text-[11px] text-mute">
+              {/* In dev, package.json only holds major.minor; the patch comes from the release workflow. */}
+              {appInfo.packaged ? `v${appInfo.version}` : `v${appInfo.version.split('.').slice(0, 2).join('.')} · dev`}
+            </span>
+          )}
         </div>
         <nav className="flex-1 space-y-1 px-3 pt-2">
           {nav.map((n) => (

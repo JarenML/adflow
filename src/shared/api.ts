@@ -45,6 +45,8 @@ export interface ClaudeUsage {
 
 export interface AppInfo extends UpdateState {
   version: string;
+  /** False when running from source (npm run dev): the patch number is only set by the release workflow. */
+  packaged: boolean;
 }
 
 export interface AdflowApi {
