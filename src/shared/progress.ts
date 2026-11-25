@@ -1,7 +1,7 @@
 // The one place that turns AdFlow's detailed pipeline state into the four statuses the whole
 // team sees. The UI shows them and the episode source receives them; change the rules here only.
-import type { EpisodeState, StepId, TeamProgress, TeamStatus } from './types';
-import { STEPS } from './types';
+import type { EpisodeState, StepId, StepStatus, TeamProgress, TeamStatus } from './types';
+import { STEP_IDS, STEPS } from './types';
 
 export const TEAM_STATUSES: TeamStatus[] = ['pendiente', 'en_produccion', 'terminado', 'publicado'];
 
@@ -37,4 +37,27 @@ export function stepLabel(step?: StepId): string {
 export function describeProgress(p: TeamProgress): string {
   const base = TEAM_STATUS_LABEL[p.status];
   return p.status === 'en_produccion' && p.step ? `${base} · ${stepLabel(p.step)}` : base;
+}
+
+/**
+ * Pure: the steps of an episode someone else is producing, from what the source knows (its status
+ * and step), for the read-only timeline. Steps before the current one are done; the current one is
+ * in progress; a finished episode went through every step but publishing.
+ */
+export function watchSteps(status: TeamStatus, step?: StepId): EpisodeState['steps'] {
+  const at = status === 'pendiente' ? -1 : status === 'en_produccion' ? Math.max(0, STEP_IDS.indexOf(step ?? 'prep')) : STEP_IDS.length - 1;
+  const statusOf = (i: number): StepStatus => {
+    if (status === 'publicado' || i < at) return 'approved';
+    if (i === at) return status === 'terminado' ? 'ready' : 'working';
+    return 'locked';
+  };
+  return Object.fromEntries(STEP_IDS.map((id, i) => [id, { status: statusOf(i) }])) as EpisodeState['steps'];
+}
+
+/** «En producción · Voz», «Terminado» — said about someone else's episode. */
+export function describeWatch(status: TeamStatus, step?: StepId): string {
+  if (status === 'en_produccion') return `Va en el paso ${stepLabel(step ?? 'prep')}`;
+  if (status === 'terminado') return 'Ya está terminado';
+  if (status === 'publicado') return 'Ya está publicado';
+  return 'Todavía no empieza';
 }

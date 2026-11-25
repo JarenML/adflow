@@ -135,6 +135,8 @@ export interface SourceEpisode {
   status: TeamStatus;
   /** Step label as the source knows it (e.g. "8 · Revisión" or "Imágenes"). */
   stepLabel?: string;
+  /** The step it is on, when the source knows it (an episode someone else is producing). */
+  step?: StepId;
   assignee?: string;
   publication?: Publication;
   notes?: string;

@@ -2,11 +2,12 @@
 // Select several pending ones to create them and write their scripts in one batch.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { CircleDashed, Layers, Play, RefreshCw, Search, Wand2 } from 'lucide-react';
+import { CircleDashed, Eye, Layers, Play, RefreshCw, Search, Wand2 } from 'lucide-react';
 import type { LibraryItem, TeamStatus } from '@shared/types';
 import { TEAM_STATUSES, TEAM_STATUS_LABEL } from '@shared/progress';
 import { api } from '../lib/api';
 import { Button, cx, Empty, inputCls, Tag, TeamStatusPill } from '../components/ui';
+import { WatchView } from './WatchView';
 
 /** Groups spellings of the same business type ("Clínicas…" / "clinicas…  "). */
 function businessKey(b?: string): string {
@@ -56,6 +57,8 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
     api.getSettings().then((s) => setMe(s.episodeSource === 'produccion-redes' ? s.team?.userName : undefined));
   }, []);
   const takenByOther = (i: LibraryItem) => !i.episodeId && !!i.assignee && !!me && i.assignee !== me;
+  /** An episode someone else is producing, open read-only (never claimed nor created here). */
+  const [watching, setWatching] = useState<string>();
   const clean = (err: unknown) => String((err as Error)?.message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
   const list = items ?? [];
   /** Business types present in the current tab (with how many episodes each), A→Z. */
@@ -112,6 +115,9 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
     setBusy(false);
     reload();
   };
+
+  const watched = watching ? items?.find((i) => i.id === watching) : undefined;
+  if (watched) return <WatchView item={watched} onBack={() => setWatching(undefined)} onRefresh={reload} />;
 
   return (
     <div className="mx-auto max-w-[1180px] px-8 py-8">
@@ -216,7 +222,9 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
                   {i.summary && <p className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-mute">{i.summary}</p>}
                 </div>
                 {takenByOther(i) ? (
-                  <span className="text-[12px] text-faint">Lo lleva {i.assignee}</span>
+                  <Button size="sm" variant="ghost" icon={<Eye className="size-3.5" />} title={`Lo lleva ${i.assignee}: solo puedes ver en qué paso va`} onClick={() => setWatching(i.id)}>
+                    Ver
+                  </Button>
                 ) : (
                 <Button size="sm" variant={i.episodeId ? 'secondary' : 'ghost'} icon={i.episodeId ? <Play className="size-3.5" /> : <Wand2 className="size-3.5" />} onClick={() => open(i)}>
                   {i.episodeId ? 'Abrir' : i.status === 'pendiente' ? 'Crear' : 'Traer a AdFlow'}

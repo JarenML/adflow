@@ -211,6 +211,7 @@ export const teamAdminSource: EpisodeSource = {
       folder: r.folder ?? undefined,
       status: r.status,
       stepLabel: r.status === 'en_produccion' && r.step ? stepLabel(r.step) : undefined,
+      step: r.step ?? undefined,
       assignee: r.assigneeName ?? undefined,
       publication: r.publication ? { network: r.publication.network, date: r.publication.date, url: r.publication.url ?? undefined, utmContent: r.publication.utmContent ?? undefined } : undefined,
     }));
