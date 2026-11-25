@@ -12,6 +12,8 @@ const CHECK_EVERY_MS = 30 * 60_000;
 
 let state: UpdateState = { readyVersion: null, status: 'idle' };
 let notify: (s: UpdateState) => void = () => undefined;
+/** Settings → autoUpdate: periodic checks and downloading on its own. */
+let auto = true;
 
 function set(patch: Partial<UpdateState>): void {
   state = { ...state, ...patch };
@@ -40,11 +42,32 @@ export function checkForUpdates(): UpdateState {
   return state;
 }
 
-export function startAutoUpdates(onChange: (s: UpdateState) => void): void {
+/** Downloads the version a check found while automatic updates were off. */
+export function downloadUpdate(): UpdateState {
+  if (state.status !== 'available') return state;
+  log(`descarga ${state.newVersion} (a pedido)`);
+  set({ status: 'downloading', progress: 0 });
+  autoUpdater.downloadUpdate().catch(() => undefined); // errors arrive via 'error'
+  return state;
+}
+
+/** Turns automatic updates on or off (Settings → autoUpdate). Turning them on downloads what a check already found. */
+export function setAutoUpdate(on: boolean): void {
+  if (on === auto) return;
+  auto = on;
+  autoUpdater.autoDownload = on;
+  if (!app.isPackaged) return;
+  log(on ? 'actualizaciones automáticas activadas' : 'actualizaciones automáticas desactivadas');
+  if (on && state.status === 'available') downloadUpdate();
+  else if (on) checkForUpdates();
+}
+
+export function startAutoUpdates(onChange: (s: UpdateState) => void, autoUpdate: boolean): void {
+  auto = autoUpdate;
   // Development runs (npm run dev / start) have no installer to update.
   if (!app.isPackaged) return;
   notify = onChange;
-  autoUpdater.autoDownload = true;
+  autoUpdater.autoDownload = auto;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on('checking-for-update', () => log(`revisa actualizaciones (versión actual ${app.getVersion()})`));
   autoUpdater.on('update-not-available', () => {
@@ -52,8 +75,14 @@ export function startAutoUpdates(onChange: (s: UpdateState) => void): void {
     set({ status: 'latest', checkedAt: new Date().toISOString() });
   });
   autoUpdater.on('update-available', (info) => {
-    log(`descarga ${info.version}`);
-    set({ status: 'downloading', downloadingVersion: info.version, progress: 0, checkedAt: new Date().toISOString() });
+    const checkedAt = new Date().toISOString();
+    if (autoUpdater.autoDownload) {
+      log(`descarga ${info.version}`);
+      set({ status: 'downloading', newVersion: info.version, progress: 0, checkedAt });
+    } else {
+      log(`${info.version} disponible; no se descarga (actualizaciones automáticas desactivadas)`);
+      set({ status: 'available', newVersion: info.version, checkedAt });
+    }
   });
   // Progress every 10 % in the log, so a slow or stuck download shows there; every whole % in the UI.
   let lastStep = -1;
@@ -72,7 +101,7 @@ export function startAutoUpdates(onChange: (s: UpdateState) => void): void {
   });
   autoUpdater.on('update-downloaded', (info) => {
     log(`${info.version} lista; se instala al cerrar AdFlow`);
-    set({ status: 'ready', readyVersion: info.version, progress: undefined, downloadingVersion: undefined });
+    set({ status: 'ready', readyVersion: info.version, progress: undefined, newVersion: undefined });
   });
   autoUpdater.on('error', (err) => {
     const message = String(err?.message ?? err);
@@ -80,8 +109,8 @@ export function startAutoUpdates(onChange: (s: UpdateState) => void): void {
     // Only the first line: electron-updater appends the whole HTTP response.
     set({ status: 'error', error: message.split('\n')[0].slice(0, 300), checkedAt: new Date().toISOString() });
   });
-  checkForUpdates();
-  setInterval(checkForUpdates, CHECK_EVERY_MS);
+  if (auto) checkForUpdates();
+  setInterval(() => auto && checkForUpdates(), CHECK_EVERY_MS);
 }
 
 export function restartToUpdate(): void {

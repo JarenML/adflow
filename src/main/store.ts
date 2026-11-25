@@ -74,6 +74,7 @@ export function defaultSettings(): Settings {
     allowPaidProviders: false,
     userName: '',
     storageDir: '',
+    autoUpdate: true,
   };
 }
 

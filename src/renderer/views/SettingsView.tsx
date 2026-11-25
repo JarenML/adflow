@@ -412,7 +412,7 @@ export function SettingsView() {
           </Card>
         )}
 
-        {tab === 'about' && <AboutTab />}
+        {tab === 'about' && <AboutTab settings={s} save={save} />}
       </div>
       </div>
     </div>

@@ -14,7 +14,7 @@ import { listVoices, voiceById, voiceSample } from './providers/voices';
 import { getSecrets, secretStatus, setSecret } from './secrets';
 import { activePlaybook, episodesDir, getDataDir, initStore, loadSettings, saveSettings } from './store';
 import { syncTeamPlaybook, teamPlaybookStatus } from './teamPlaybook';
-import { checkForUpdates, restartToUpdate, startAutoUpdates, updateState } from './updater';
+import { checkForUpdates, downloadUpdate, restartToUpdate, setAutoUpdate, startAutoUpdates, updateState } from './updater';
 import { claudeUsage, initClaudeLimits } from './brain/claudeLimits';
 // Where updates are published (electron-builder's publish config), to link to its releases page.
 import { build as pkgBuild } from '../../package.json';
@@ -90,6 +90,7 @@ function registerIpc() {
   handle('saveSettings', (s) => {
     const saved = saveSettings(s);
     pipeline.queue.setLimits(saved.concurrency);
+    setAutoUpdate(saved.autoUpdate);
     return saved;
   });
   handle('setSecret', (name: string, value: string) => {
@@ -166,6 +167,7 @@ function registerIpc() {
   });
   handle('restartToUpdate', () => restartToUpdate());
   handle('checkForUpdates', () => checkForUpdates());
+  handle('downloadUpdate', () => downloadUpdate());
   handle('claudeUsage', () => claudeUsage());
   handle('defaults', (cap) => loadSettings().defaults[cap as keyof ReturnType<typeof loadSettings>['defaults']]);
 }
@@ -196,7 +198,7 @@ void app.whenReady().then(() => {
   });
   registerIpc();
   createWindow();
-  startAutoUpdates((u) => broadcast('update', u));
+  startAutoUpdates((u) => broadcast('update', u), loadSettings().autoUpdate);
   // The team playbook is refreshed in the background at every start.
   if (loadSettings().episodeSource === 'produccion-redes') void syncTeamPlaybook();
 });

@@ -194,6 +194,8 @@ export interface Settings {
   userName: string;
   /** Where episode folders are created. Empty = AdFlow's own storage (<app data>/episodios). */
   storageDir: string;
+  /** On: new versions are looked for every 30 minutes and downloaded alone. Off: only with «Buscar ahora», and downloaded on request. */
+  autoUpdate: boolean;
 }
 
 /** State of the playbook copy downloaded from the team admin. */

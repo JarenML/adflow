@@ -24,9 +24,10 @@ import type { Script, ScriptCheck } from './schemas';
 export interface UpdateState {
   readyVersion: string | null;
   /** dev: running from source, there is nothing to update. */
-  status: 'dev' | 'idle' | 'checking' | 'latest' | 'downloading' | 'ready' | 'error';
-  /** The version being downloaded (status 'downloading'). */
-  downloadingVersion?: string;
+  /** available: found but not downloaded, because automatic updates are off. */
+  status: 'dev' | 'idle' | 'checking' | 'latest' | 'available' | 'downloading' | 'ready' | 'error';
+  /** The version found or being downloaded (status 'available' or 'downloading'). */
+  newVersion?: string;
   /** 0–100 while downloading. */
   progress?: number;
   /** When the last check finished (ISO). */
@@ -125,6 +126,8 @@ export interface AdflowApi {
   restartToUpdate(): Promise<void>;
   /** Looks for a new version now (it is also checked every 30 minutes); progress arrives as 'update' events. */
   checkForUpdates(): Promise<UpdateState>;
+  /** Downloads the version found by a check (when automatic updates are off). */
+  downloadUpdate(): Promise<UpdateState>;
   /** The Claude account's usage limits, as last reported by Claude Code. */
   claudeUsage(): Promise<ClaudeUsage>;
 
@@ -178,5 +181,6 @@ export const API_METHODS = [
   'appInfo',
   'restartToUpdate',
   'checkForUpdates',
+  'downloadUpdate',
   'claudeUsage',
 ] as const;

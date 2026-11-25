@@ -2,11 +2,12 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, CircleAlert, Download, ExternalLink, FileText, FolderOpen, RefreshCw, RotateCcw } from 'lucide-react';
 import type { AppInfo, UpdateState } from '@shared/api';
+import type { Settings } from '@shared/types';
 import { api, useQueue } from '../lib/api';
 import { Button, Card, cx, formatDate, Logo, SectionTitle, Tag } from '../components/ui';
 
 /** One line on where the updates stand. */
-function updateLine(u: UpdateState): { tone: 'ok' | 'bad' | 'mute' | 'brand'; text: string } {
+function updateLine(u: UpdateState, auto: boolean): { tone: 'ok' | 'bad' | 'mute' | 'brand'; text: string } {
   switch (u.status) {
     case 'dev':
       return { tone: 'mute', text: 'Versión de desarrollo: se actualiza con git, no por aquí.' };
@@ -14,18 +15,34 @@ function updateLine(u: UpdateState): { tone: 'ok' | 'bad' | 'mute' | 'brand'; te
       return { tone: 'mute', text: 'Buscando actualizaciones…' };
     case 'latest':
       return { tone: 'ok', text: `Tienes la última versión${u.checkedAt ? ` · revisado ${formatDate(u.checkedAt)}` : ''}.` };
+    case 'available':
+      return { tone: 'brand', text: `Hay una versión nueva: v${u.newVersion ?? ''}.` };
     case 'downloading':
-      return { tone: 'brand', text: `Descargando v${u.downloadingVersion ?? ''}… ${u.progress ?? 0} %` };
+      return { tone: 'brand', text: `Descargando v${u.newVersion ?? ''}… ${u.progress ?? 0} %` };
     case 'ready':
       return { tone: 'brand', text: `v${u.readyVersion} descargada: se instala al cerrar AdFlow.` };
     case 'error':
       return { tone: 'bad', text: `No se pudo revisar: ${u.error ?? 'error desconocido'}` };
     default:
-      return { tone: 'mute', text: 'Se revisa al abrir AdFlow y cada 30 minutos.' };
+      return { tone: 'mute', text: auto ? 'Se revisa al abrir AdFlow y cada 30 minutos.' : 'Actualizaciones automáticas desactivadas: busca a mano.' };
   }
 }
 
-export function AboutTab() {
+function Switch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <button
+      role="switch"
+      aria-checked={on}
+      onClick={() => onChange(!on)}
+      className={cx('no-drag relative h-6 w-11 shrink-0 rounded-full border transition-colors', on ? 'border-brand bg-brand' : 'border-line-2 bg-panel-2')}
+    >
+      <span className={cx('absolute top-0.5 size-[18px] rounded-full bg-white shadow transition-[left]', on ? 'left-[22px]' : 'left-0.5')} />
+    </button>
+  );
+}
+
+/** settings and save come from SettingsView, so every tab edits the same copy. */
+export function AboutTab({ settings, save }: { settings: Settings; save: (s: Settings) => Promise<void> }) {
   const [info, setInfo] = useState<AppInfo>();
   const q = useQueue();
   const running = q ? Object.values(q.lanes).reduce((a, l) => a + l.running, 0) : 0;
@@ -36,7 +53,9 @@ export function AboutTab() {
   }, []);
   if (!info) return null;
 
-  const line = updateLine(info);
+  const merge = (u: UpdateState) => setInfo((a) => a && { ...a, ...u });
+  const setAuto = (on: boolean) => save({ ...settings, autoUpdate: on });
+  const line = updateLine(info, settings.autoUpdate);
   // In dev, package.json only holds major.minor; the patch comes from the release workflow.
   const shown = info.packaged ? info.version : `${info.version.split('.').slice(0, 2).join('.')} · dev`;
   const sep = info.platform.startsWith('win') ? '\\' : '/';
@@ -74,19 +93,24 @@ export function AboutTab() {
               <Button variant="primary" size="sm" icon={<RotateCcw className="size-3.5" />} disabled={running > 0} title={running ? 'Espera a que terminen las tareas en curso' : undefined} onClick={() => api.restartToUpdate()}>
                 Reiniciar e instalar
               </Button>
-            ) : info.packaged && (
-              <Button
-                size="sm"
-                icon={<RefreshCw className="size-3.5" />}
-                loading={info.status === 'checking'}
-                disabled={info.status === 'downloading'}
-                onClick={async () => {
-                  const u = await api.checkForUpdates();
-                  setInfo((a) => a && { ...a, ...u });
-                }}
-              >
-                Buscar ahora
-              </Button>
+            ) : (
+              <div className="flex gap-2">
+                {info.status === 'available' && (
+                  <Button variant="primary" size="sm" icon={<Download className="size-3.5" />} onClick={async () => merge(await api.downloadUpdate())}>
+                    Descargar
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  icon={<RefreshCw className="size-3.5" />}
+                  loading={info.status === 'checking'}
+                  disabled={!info.packaged || info.status === 'downloading'}
+                  title={info.packaged ? undefined : 'Solo en la app instalada'}
+                  onClick={async () => merge(await api.checkForUpdates())}
+                >
+                  Buscar actualizaciones
+                </Button>
+              </div>
             )}
           </div>
           {info.status === 'downloading' && (
@@ -95,6 +119,17 @@ export function AboutTab() {
             </div>
           )}
           {info.status === 'ready' && running > 0 && <p className="mt-2 text-[11.5px] text-faint">Hay {running} tarea(s) en curso: reinicia cuando terminen, o se instala solo al cerrar AdFlow.</p>}
+          <div className="mt-4 flex items-center gap-3 border-t border-line pt-4">
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-medium">Actualizar automáticamente</p>
+              <p className="text-[12px] text-faint">
+                {settings.autoUpdate
+                  ? 'Busca versiones nuevas cada 30 minutos, las descarga sola y se instalan al cerrar AdFlow.'
+                  : 'No busca sola: usa «Buscar actualizaciones» y decide si descargar.'}
+              </p>
+            </div>
+            <Switch on={settings.autoUpdate} onChange={setAuto} />
+          </div>
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2">
