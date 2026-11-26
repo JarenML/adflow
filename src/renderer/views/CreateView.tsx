@@ -92,7 +92,6 @@ export function CreateView({
       await api.patchEpisode(e.id, {
         providers: choice.providers,
         brain: { ...e.brain, account: choice.account, model: choice.model },
-        closingVoice: choice.closingVoice,
       });
       // An episode whose script someone already approved opens at its review; otherwise Claude starts it.
       if (e.steps.prep.status !== 'approved') {

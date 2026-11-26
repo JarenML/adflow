@@ -76,7 +76,7 @@ esos ids. "inicio" y "fin" son segundos acumulados y la suma total cumple la dur
 de notas, nombres de quien habla ni diálogos de personajes, que van en "dialogo". El logo no lleva
 locución y la escena final deja "locucion" en null (su texto fijo lo pone la plantilla).`;
 
-export function scriptPrompt(title: string, closingVoice: string): string {
+export function scriptPrompt(title: string): string {
   return `Paso 1 del playbook: guion y escenas del episodio «${title}».
 
 Escribe en la carpeta actual:
@@ -85,7 +85,7 @@ Escribe en la carpeta actual:
    plan de música y efectos.
 2. escenas.json — exactamente con el formato de abajo.
 
-Voz del cierre: ${closingVoice === 'template' ? 'la de la plantilla' : 'la del narrador del video'}.
+Voz del cierre: la del narrador del video (la escena final la dice el mismo narrador, nunca la voz de la plantilla).
 
 Qué escenas son clip de video lo decides aquí y es definitivo (AdFlow genera exactamente esas): tipo
 real_clip solo para el gancho y las escenas donde un personaje habla («dialogo»); las demás escenas

@@ -21,12 +21,11 @@ export function PrepStep({ episode }: { episode: EpisodeState }) {
   }, []);
   const locked = episode.steps.prep.status === 'approved';
 
-  const choice: PrepChoice = { providers: episode.providers, account: episode.brain.account, model: episode.brain.model, closingVoice: episode.closingVoice };
+  const choice: PrepChoice = { providers: episode.providers, account: episode.brain.account, model: episode.brain.model };
   const change = (patch: Partial<PrepChoice>) =>
     api.patchEpisode(episode.id, {
       ...(patch.providers && { providers: patch.providers }),
       ...((patch.account || patch.model) && { brain: { ...episode.brain, account: patch.account ?? episode.brain.account, model: patch.model ?? episode.brain.model } }),
-      ...(patch.closingVoice && { closingVoice: patch.closingVoice }),
     });
 
   const start = async () => {
@@ -63,7 +62,7 @@ export function PrepStep({ episode }: { episode: EpisodeState }) {
         </div>
       </Card>
 
-      <PrepOptions value={choice} onChange={(p) => void change(p)} providers={providers} settings={settings} lockBrain={locked} />
+      <PrepOptions value={choice} onChange={(p) => void change(p)} providers={providers} settings={settings} />
 
       <div className={cx('flex items-center justify-between rounded-2xl border px-5 py-4', locked ? 'border-ok/30 bg-ok/5' : 'border-brand/30 bg-brand/5')}>
         <div>

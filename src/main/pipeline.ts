@@ -302,10 +302,10 @@ export class Pipeline {
   /** Every action except approve, reopen and cancel. */
   private async run(id: string, a: PipelineAction): Promise<unknown> {
     if (a.step === 'script') {
-      if (a.type === 'generate') return this.brainStep(id, 'script', P.scriptPrompt(this.get(id).title, this.get(id).closingVoice), { fresh: true });
+      if (a.type === 'generate') return this.brainStep(id, 'script', P.scriptPrompt(this.get(id).title), { fresh: true });
       if (a.type === 'regenerate') {
         this.archive(id, 'script', ['guion.md', 'escenas.json']);
-        return this.brainStep(id, 'script', P.scriptPrompt(this.get(id).title, this.get(id).closingVoice), { fresh: true });
+        return this.brainStep(id, 'script', P.scriptPrompt(this.get(id).title), { fresh: true });
       }
       if (a.type === 'feedback') return this.brainStep(id, 'script', P.scriptFeedbackPrompt(a.message));
     }

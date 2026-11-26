@@ -1,8 +1,8 @@
-// The Preparación choices (who does each part and how Claude works), shared by the Crear page,
+// The Preparación choices (who does each part, and the Claude account the brain runs with), shared by the Crear page,
 // where they are a draft for the episode about to be created, and by an episode's own step.
 import { Brain, Clapperboard, ImageIcon, Lock, Mic, Music } from 'lucide-react';
-import type { Capability, EpisodeState, ProviderInfo, Settings } from '@shared/types';
-import { Card, Field, SectionTitle, Select, Tag } from './ui';
+import type { Capability, ProviderInfo, Settings } from '@shared/types';
+import { Card, SectionTitle, Select, Tag } from './ui';
 
 export const CAPS: { id: Capability; label: string; icon: typeof Brain; hint: string }[] = [
   { id: 'brain', label: 'Cerebro', icon: Brain, hint: 'Escribe el guion, los prompts y revisa cada paso' },
@@ -35,14 +35,15 @@ export function planTag(p: ProviderInfo) {
 
 export interface PrepChoice {
   providers: Record<Capability, string>;
+  /** Claude account the brain (Claude Code) runs with. */
   account: string;
+  /** Claude model: the default from Settings, not chosen per episode. */
   model: string;
-  closingVoice: EpisodeState['closingVoice'];
 }
 
 /** The choices for a new episode: the person's defaults from Settings. */
 export function defaultChoice(s: Settings): PrepChoice {
-  return { providers: { ...s.defaults }, account: s.claude.defaultAccount, model: s.claude.model, closingVoice: 'narrator' };
+  return { providers: { ...s.defaults }, account: s.claude.defaultAccount, model: s.claude.model };
 }
 
 export function PrepOptions({
@@ -50,15 +51,13 @@ export function PrepOptions({
   onChange,
   providers,
   settings,
-  lockBrain,
 }: {
   value: PrepChoice;
   onChange: (patch: Partial<PrepChoice>) => void;
   providers: ProviderInfo[];
   settings?: Settings;
-  /** Once the script is under way the brain stays the same. */
-  lockBrain?: boolean;
 }) {
+  const accounts = settings?.claude.accounts ?? [];
   const allowPaid = !!settings?.allowPaidProviders;
   return (
     <>
@@ -81,16 +80,24 @@ export function PrepOptions({
                   </div>
                 </div>
                 <div>
-                  <Select
-                    value={value.providers[cap.id]}
-                    disabled={lockBrain && cap.id === 'brain'}
-                    onChange={(v) => onChange({ providers: { ...value.providers, [cap.id]: v } })}
-                    options={opts.map((p) => ({
-                      value: p.id,
-                      label: providerLabel(p),
-                      disabled: !p.implemented || (p.billing === 'credits' && !allowPaid),
-                    }))}
-                  />
+                  {cap.id === 'brain' ? (
+                    // The brain is always Claude Code: what is chosen is the Claude account it runs with.
+                    <Select
+                      value={value.account}
+                      onChange={(v) => onChange({ account: v })}
+                      options={accounts.map((a) => ({ value: a.id, label: `${current?.name ?? 'Claude Code'} · ${a.label}` }))}
+                    />
+                  ) : (
+                    <Select
+                      value={value.providers[cap.id]}
+                      onChange={(v) => onChange({ providers: { ...value.providers, [cap.id]: v } })}
+                      options={opts.map((p) => ({
+                        value: p.id,
+                        label: providerLabel(p),
+                        disabled: !p.implemented || (p.billing === 'credits' && !allowPaid),
+                      }))}
+                    />
+                  )}
                   {current && <p className="mt-1.5 text-[11px] text-faint">{current.costNote}</p>}
                 </div>
                 <div className="flex w-36 justify-end gap-1">
@@ -100,35 +107,6 @@ export function PrepOptions({
               </div>
             );
           })}
-        </div>
-      </Card>
-
-      <Card className="p-5">
-        <SectionTitle title="Cerebro" hint="Claude Code se ejecuta en tu computadora con la cuenta seleccionada." />
-        <div className="grid grid-cols-3 gap-4">
-          <Field label="Cuenta de Claude">
-            <Select value={value.account} onChange={(v) => onChange({ account: v })} options={(settings?.claude.accounts ?? []).map((a) => ({ value: a.id, label: a.label }))} />
-          </Field>
-          <Field label="Modelo">
-            <Select
-              value={value.model}
-              onChange={(v) => onChange({ model: v })}
-              options={[
-                { value: 'opus', label: 'Opus (más preciso)' },
-                { value: 'sonnet', label: 'Sonnet (más rápido)' },
-              ]}
-            />
-          </Field>
-          <Field label="Voz del cierre" hint="Voz que dice «¡Robles punto a i!» al final">
-            <Select
-              value={value.closingVoice}
-              onChange={(v) => onChange({ closingVoice: v as EpisodeState['closingVoice'] })}
-              options={[
-                { value: 'narrator', label: 'El narrador del video' },
-                { value: 'template', label: 'Voz de la plantilla' },
-              ]}
-            />
-          </Field>
         </div>
       </Card>
     </>
