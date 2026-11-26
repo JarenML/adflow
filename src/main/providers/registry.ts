@@ -1,6 +1,7 @@
 // Every connection AdFlow knows about. A provider that spends credits is listed (so the person
 // can see and choose it) but stays blocked until it is implemented and paid providers are allowed.
 import type { Capability, ProviderInfo } from '@shared/types';
+import { CLIP_S, clipCredits, videoModelFor } from '@shared/videoModels';
 
 export const PROVIDERS: ProviderInfo[] = [
   // Brain
@@ -64,21 +65,22 @@ export const PROVIDERS: ProviderInfo[] = [
   {
     id: 'elevenlabs-mcp',
     capability: 'video',
-    name: 'ElevenLabs · MCP (tu plan)',
+    name: 'ElevenLabs MCP',
     description:
-      'Claude genera cada clip con el conector de ElevenLabs de tu cuenta de Claude: sube la imagen de la escena como primer fotograma y usa Veo 3.1 Fast, 9:16. Funciona con el plan Creator.',
+      'Claude genera cada clip con el conector de ElevenLabs de tu cuenta de Claude: sube la imagen de la escena como primer fotograma y usa el modelo Veo que elijas, 9:16. Funciona con cualquier plan de ElevenLabs que incluya Image & Video (desde Free).',
     billing: 'credits',
     implemented: true,
-    costNote: '~3,640 créditos de ElevenLabs por clip de 4 s (el doble a 8 s). Conecta ElevenLabs en claude.ai → Connectors.',
+    costNote: 'Créditos de ElevenLabs por clip según el modelo (Veo 3.1 Fast ≈ 3,640 por clip de 4 s). Conecta ElevenLabs en claude.ai → Connectors.',
   },
   {
     id: 'elevenlabs-video',
     capability: 'video',
-    name: 'ElevenLabs · Veo 3.1 Fast',
-    description: 'API de imagen y video de ElevenLabs con Veo 3.1 Fast: la imagen de la escena como primer fotograma, 9:16.',
+    name: 'ElevenLabs API',
+    description: 'API de imagen y video de ElevenLabs con el modelo Veo que elijas: la imagen de la escena como primer fotograma, 9:16.',
     billing: 'credits',
     implemented: true,
     secret: 'elevenlabs',
+    minPlan: 'Pro',
     costNote: 'Créditos de ElevenLabs por clip (plan Pro o superior para la API de video).',
   },
   {
@@ -123,7 +125,7 @@ export const PROVIDERS: ProviderInfo[] = [
   {
     id: 'elevenlabs',
     capability: 'voice',
-    name: 'ElevenLabs',
+    name: 'ElevenLabs API',
     description: 'Voz principal del playbook (eleven_v3, con sus etiquetas de emoción).',
     billing: 'credits',
     implemented: true,
@@ -133,7 +135,7 @@ export const PROVIDERS: ProviderInfo[] = [
   {
     id: 'heygen-voice',
     capability: 'voice',
-    name: 'HeyGen · voces (MCP)',
+    name: 'HeyGen MCP',
     description:
       'Voces de HeyGen a través de Claude Code, sin clave de API en AdFlow. Incluye catálogo con muestras gratuitas.',
     billing: 'credits',
@@ -152,23 +154,32 @@ export const PROVIDERS: ProviderInfo[] = [
   },
   // Music
   {
+    id: 'elevenlabs-music',
+    capability: 'music',
+    name: 'ElevenLabs API',
+    description: 'Pista instrumental hecha a la medida del montaje: tensión, logo, solución, drop y cierre. Se genera en Render final, después de que Claude arma el video.',
+    billing: 'credits',
+    implemented: true,
+    secret: 'elevenlabs',
+    costNote: '≈ 4 créditos por segundo (≈ 200 por 50 s). Si el montaje no cambia, se reutiliza sin volver a cobrar.',
+  },
+  {
+    id: 'claude-music',
+    capability: 'music',
+    name: 'Claude',
+    description: 'Claude Code la escribe en código al armar el video en Remotion (playbook §4, opción 3), calzada a sus tiempos; AdFlow la genera con Python.',
+    billing: 'subscription',
+    implemented: true,
+    costNote: 'Incluido en tu suscripción de Claude (consume su límite de uso).',
+  },
+  {
     id: 'none',
     capability: 'music',
-    name: 'Sin música (temporal)',
-    description: 'Usa la pista de un episodio anterior en el montaje.',
+    name: 'Sin música',
+    description: 'El video sale sin música (solo voces y efectos).',
     billing: 'free',
     implemented: true,
     costNote: 'Gratis.',
-  },
-  {
-    id: 'elevenlabs-music',
-    capability: 'music',
-    name: 'ElevenLabs Music',
-    description: 'Pista instrumental sincronizada con la línea de tiempo (tensión, solución, drop).',
-    billing: 'credits',
-    implemented: false,
-    secret: 'elevenlabs',
-    costNote: '~200 créditos por 50 s.',
   },
 ];
 
@@ -188,7 +199,7 @@ export const SECRET_LABELS: Record<string, string> = {
 };
 
 /** Rough spend for an action, shown before the person confirms it. */
-export function estimate(providerId: string, units: number): string {
+export function estimate(providerId: string, units: number, model?: string): string {
   const p = provider(providerId);
   if (!p) return '';
   switch (providerId) {
@@ -198,9 +209,8 @@ export function estimate(providerId: string, units: number): string {
       // units = characters of the narration (1 credit each with eleven_v3).
       return `≈ ${units.toLocaleString('es-PE')} créditos (1 por carácter, una toma por frase)`;
     case 'elevenlabs-mcp':
-      return `${units} clip${units === 1 ? '' : 's'} · ≈ ${(units * 3640).toLocaleString('es-PE')} créditos de ElevenLabs a 4 s`;
     case 'elevenlabs-video':
-      return `${units} clip${units === 1 ? '' : 's'} · créditos de ElevenLabs según modelo, duración y resolución`;
+      return `${units} clip${units === 1 ? '' : 's'} de ${CLIP_S} s · ≈ ${(units * clipCredits(videoModelFor(providerId, model).id)).toLocaleString('es-PE')} créditos con ${videoModelFor(providerId, model).label}`;
     case 'windows-sapi':
     case 'edge-tts':
       return `${units} frases · gratis`;

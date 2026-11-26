@@ -39,9 +39,12 @@ import { toTeamStatus } from '@shared/progress';
 import { adReference, scriptReference } from '@shared/brief';
 import { generateWithCodex } from './providers/codexImage';
 import { provider, SECRET_LABELS } from './providers/registry';
-import { elevenClip, elevenUsedCredits } from './providers/elevenlabs';
+import { elevenClip, elevenMusic, elevenUsedCredits } from './providers/elevenlabs';
+import { audioMusicFile, buildMusicPlan, MUSIC_CLAUDE, MUSIC_ELEVENLABS, MUSIC_FILE, MUSIC_TIMES_FILE, musicCredits, musicPlanKey, parseMusicTimes } from '@shared/music';
+import { runCli } from './proc';
 import { DEFAULT_HEYGEN_CREDIT_LIMIT, DEFAULT_VOICE_CREDIT_LIMIT, heygenMaxCredits, lineCredits, planHeygenRun, planVoiceRun } from '@shared/voiceCredits';
 import { downloadClip, mcpClip } from './providers/elevenlabsMcp';
+import { CLIP_S, DEFAULT_VIDEO_MODEL, videoModel, videoModelFor } from '@shared/videoModels';
 import { heygenSpeech } from './providers/heygenMcp';
 import { synthesize } from './providers/voices';
 import { WorkQueue } from './queue';
@@ -811,7 +814,10 @@ export class Pipeline {
   /** Generates the clips with the episode's video provider (ElevenLabs API or MCP), one queue job per clip. */
   private async generateClips(id: string, sceneIds?: string[]): Promise<void> {
     const e = this.get(id);
-    const cfg = { provider: e.providers.video, model: 'veo-3.1-fast', durationS: 4, resolution: '1080p' as const, ...e.videoConfig };
+    // Every clip lasts CLIP_S (the script is written for it), whatever an older episode saved.
+    const saved = { provider: e.providers.video, model: DEFAULT_VIDEO_MODEL, resolution: '1080p' as const, ...e.videoConfig, durationS: CLIP_S };
+    // A model the provider does not offer (Lite through the API) falls back to the default.
+    const cfg = { ...saved, model: videoModelFor(saved.provider, saved.model).id };
     const generates = cfg.provider === 'elevenlabs-video' || cfg.provider === 'elevenlabs-mcp';
     const blocked = generates ? providerBlock(cfg.provider, loadSettings().allowPaidProviders, keys()) : 'Este proveedor no permite generar desde AdFlow. Sube el clip manualmente.';
     if (blocked) {
@@ -840,13 +846,14 @@ export class Pipeline {
       await Promise.all(
         clips.map((c) =>
           this.queue.add(id, 'videos', 'clip', `Clip ${c.sceneId} (MCP)`, async (signal) => {
-            this.activity(id, 'videos', 'tool', `Generando el clip ${c.sceneId} con ElevenLabs`);
+            this.activity(id, 'videos', 'tool', `Generando el clip ${c.sceneId} con ElevenLabs (${videoModel(cfg.model).label})`);
             const res = await mcpClip({
               dir: e.dir,
               sceneId: c.sceneId,
               image: c.image,
               file: c.file,
               prompt: c.prompt,
+              videoModel: cfg.model,
               durationS: cfg.durationS,
               resolution: cfg.resolution,
               audio: c.audio,
@@ -887,8 +894,7 @@ export class Pipeline {
               key: keys().elevenlabs,
               image: path.join(e.dir, c.image),
               prompt: c.prompt,
-              // Always Veo 3.1 Fast (decision of the owner): cheaper and enough for 4–8 s clips.
-              model: 'veo-3.1-fast',
+              model: cfg.model,
               durationS: cfg.durationS,
               resolution: cfg.resolution,
               audio: c.audio,
@@ -960,9 +966,22 @@ export class Pipeline {
         tools: [...BRAIN_FILE_TOOLS, 'Bash'],
         allowedTools: ['Bash(npx remotion still:*)', 'Bash(npx remotion compositions:*)', 'Bash(npx tsc:*)'],
       });
-    if (mode === 'build') await brain(P.renderPrompt(material), !e.brain.sessions.render);
-    if (mode === 'feedback' && message) await brain(P.renderFeedbackPrompt(message));
+    const music = await this.renderMusic(e.providers.music);
+    if (mode === 'build') await brain(P.renderPrompt(material, music), !e.brain.sessions.render);
+    if (mode === 'feedback' && message) await brain(P.renderFeedbackPrompt(message, music));
     if (this.get(id).steps.render.status === 'error') return;
+
+    // 2b. The music chosen in Preparación is enough: if the assembled project does not have it yet
+    // (it was made before choosing it, or the choice changed), Claude adds it here, also on a re-render.
+    if (this.musicMissing(e, project, music)) {
+      log(music.kind === 'none' ? 'Quita la música del montaje (elegiste «Sin música»)' : 'El montaje aún no tiene la música elegida: Claude la agrega', 'info');
+      await brain(P.musicAddPrompt(music));
+      if (this.get(id).steps.render.status === 'error') return;
+    }
+
+    // 2c. The music, now that the timeline exists (ElevenLabs Music or the script Claude wrote).
+    const musicProblem = await this.ensureMusic(id, project, (fix) => brain(P.musicFixPrompt(fix)));
+    if (musicProblem) return fail(musicProblem);
 
     // 3. Render; one fix by Claude if it fails.
     const render = async () => {
@@ -999,6 +1018,105 @@ export class Pipeline {
     writeJson(this.renderReportFile(id), report);
     log(`Video final: ${report.file} · ${durationS?.toFixed(1) ?? '?'} s · ${report.sizeMB} MB${note ? ` · ${note}` : ''}`, 'result');
     this.setStatus(id, 'render', 'review', { note: `Listo: ${report.file}` });
+  }
+
+  /** True when the assembled project does not match the music chosen in Preparación. */
+  private musicMissing(e: EpisodeState, project: string, music: P.RenderMusic): boolean {
+    const audioFile = path.join(project, 'src', 'audio.tsx');
+    const audio = fs.existsSync(audioFile) ? fs.readFileSync(audioFile, 'utf8') : '';
+    const playing = audioMusicFile(audio);
+    const uses = (f: string) => playing === f;
+    if (music.kind === 'none') return playing !== null;
+    if (music.kind === 'elevenlabs') return !uses(MUSIC_FILE[MUSIC_ELEVENLABS]) || !fs.existsSync(path.join(project, MUSIC_TIMES_FILE));
+    return !uses(MUSIC_FILE[MUSIC_CLAUDE]) || !fs.existsSync(path.join(e.dir, 'musica', 'componer.py'));
+  }
+
+  /** What the render prompt says about the music of this episode. */
+  private async renderMusic(providerId: string): Promise<P.RenderMusic> {
+    if (providerId === MUSIC_ELEVENLABS) return { kind: 'elevenlabs' };
+    if (providerId !== MUSIC_CLAUDE) return { kind: 'none' };
+    const r = await runCli('python', ['-c', 'import numpy'], { timeoutMs: 30_000, shell: false });
+    return { kind: 'claude', numpy: r.code === 0 };
+  }
+
+  /**
+   * Makes the episode's music after Claude assembled the video, and puts it in the Remotion project.
+   * ElevenLabs Music follows the timeline Claude wrote (public/musica/tiempos.json); the same plan
+   * reuses the track already made, so a re-render costs nothing. «Claude compone» runs the script
+   * Claude wrote (../musica/componer.py), with one fix by Claude if it fails. Returns a problem, if any.
+   */
+  private async ensureMusic(id: string, project: string, fix: (error: string) => Promise<unknown>): Promise<string | null> {
+    const e = this.get(id);
+    const providerId = e.providers.music;
+    if (providerId !== MUSIC_ELEVENLABS && providerId !== MUSIC_CLAUDE) return null;
+    const log = (t: string, kind: ActivityEvent['kind'] = 'tool') => this.activity(id, 'render', kind, t);
+    const dir = path.join(e.dir, 'musica');
+    const file = path.join(dir, MUSIC_FILE[providerId]);
+    const toProject = () => {
+      const pub = path.join(project, 'public', 'musica');
+      fs.mkdirSync(pub, { recursive: true });
+      fs.copyFileSync(file, path.join(pub, path.basename(file)));
+    };
+
+    if (providerId === MUSIC_ELEVENLABS) {
+      const blocked = providerBlock(providerId, loadSettings().allowPaidProviders, keys());
+      if (blocked) return blocked;
+      const timesFile = path.join(project, MUSIC_TIMES_FILE);
+      const times = parseMusicTimes(fs.existsSync(timesFile) ? fs.readFileSync(timesFile, 'utf8') : null);
+      if (!times) return 'Claude no dejó los tiempos de la música (public/musica/tiempos.json). Pídele en el chat de Render final que los escriba y vuelve a renderizar.';
+      const { plan, totalMs } = buildMusicPlan(times);
+      const planFile = path.join(dir, 'plan.json');
+      const previous = fs.existsSync(planFile) ? fs.readFileSync(planFile, 'utf8') : null;
+      if (fs.existsSync(file) && previous !== null && previous === musicPlanKey(plan)) {
+        log('Música: el montaje no cambió, se reutiliza la pista de ElevenLabs (sin créditos)', 'info');
+        toProject();
+        return null;
+      }
+      const credits = musicCredits(totalMs);
+      const key = keys().elevenlabs;
+      let problem: string | null = null;
+      await this.queue.add(id, 'render', 'render', 'Música (ElevenLabs)', async (signal) => {
+        log(`Genera la música con ElevenLabs Music: ${(totalMs / 1000).toFixed(1)} s en ${plan.sections.length} secciones (${plan.sections.map((s) => s.section_name).join(' · ')}), ≈ ${credits} créditos`);
+        const before = await elevenUsedCredits(key).catch(() => null);
+        try {
+          await elevenMusic(key, plan, file, signal);
+        } catch (err) {
+          problem = String((err as Error)?.message ?? err);
+          return;
+        }
+        fs.writeFileSync(planFile, musicPlanKey(plan));
+        const after = await elevenUsedCredits(key).catch(() => null);
+        const real = before !== null && after !== null ? after - before : null;
+        log(`Música lista: ${path.basename(file)}${real !== null ? ` · ElevenLabs registra ${real} créditos` : ''}`, 'result');
+        this.update(id, (x) => x.costs.push({ at: now(), step: 'render', provider: MUSIC_ELEVENLABS, label: `Música · ${real ?? credits} créditos`, credits: real ?? credits }));
+      });
+      if (problem) return problem;
+      toProject();
+      return null;
+    }
+
+    // «Claude» (it composes the music): the script Claude wrote while assembling.
+    const script = path.join(dir, 'componer.py');
+    if (!fs.existsSync(script)) return 'Claude no escribió la música (../musica/componer.py). Pídele en el chat de Render final que la componga y vuelve a renderizar.';
+    const compose = async () => {
+      let r: { code: number | null; stdout: string; stderr: string } = { code: -1, stdout: '', stderr: '' };
+      await this.queue.add(id, 'render', 'render', 'Música (Claude)', async (signal) => {
+        log('Genera la música que compuso Claude (python musica/componer.py)');
+        fs.rmSync(file, { force: true });
+        r = await runCli('python', [script], { cwd: project, timeoutMs: 10 * 60_000, shell: false, signal });
+      });
+      return r.code === 0 && fs.existsSync(file) ? null : (r.stderr || r.stdout || 'El script no escribió musica/musica.wav.').trim().split(/\r?\n/).slice(-20).join('\n');
+    };
+    let error = await compose();
+    if (error) {
+      log('La música falló. Claude está corrigiendo el script', 'info');
+      await fix(error);
+      error = await compose();
+    }
+    if (error) return `La música de Claude falló: ${error.split(/\r?\n/).pop()}`;
+    log(`Música lista: musica/${path.basename(file)}`, 'result');
+    toProject();
+    return null;
   }
 
   // ── Voice ─────────────────────────────────────────────────────────────────────────────────

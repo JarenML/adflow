@@ -3,12 +3,13 @@ import { ArrowRight, ChevronDown, Clapperboard, ExternalLink, Eye, ImageIcon, Lo
 import type { ClipItem, EpisodeState, ProviderInfo, Settings, VideoClipConfig } from '@shared/types';
 import { api, useLive } from '../lib/api';
 import type { ChatTarget } from '../components/BrainPanel';
-import { Button, Card, cx, Empty, Field, SectionTitle, Select, Tag } from '../components/ui';
-import { billingTag } from './PrepStep';
+import { Button, Card, cx, Empty, Field, inputCls, SectionTitle, Select, Tag } from '../components/ui';
+import { billingTag, planTag, providerLabel } from './PrepStep';
 import { SceneModal } from '../components/SceneModal';
 import type { Scene } from '@shared/schemas';
+import { CLIP_S, DEFAULT_VIDEO_MODEL, videoModelFor, videoModelsFor } from '@shared/videoModels';
 
-const DEFAULT_CFG: VideoClipConfig = { provider: 'manual', model: 'veo-3.1-fast', durationS: 4, resolution: '1080p' };
+const DEFAULT_CFG: VideoClipConfig = { provider: 'manual', model: DEFAULT_VIDEO_MODEL, durationS: CLIP_S, resolution: '1080p' };
 
 export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTarget: (t: ChatTarget) => void }) {
   const [clips] = useLive(() => api.clips(episode.id), [episode.id], episode.id);
@@ -18,7 +19,8 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [settings, setSettings] = useState<Settings>();
   const [estimate, setEstimate] = useState('');
-  const cfg = { ...DEFAULT_CFG, provider: episode.providers.video, ...episode.videoConfig };
+  const saved = { ...DEFAULT_CFG, provider: episode.providers.video, ...episode.videoConfig, durationS: CLIP_S };
+  const cfg = { ...saved, model: videoModelFor(saved.provider, saved.model).id };
   const st = episode.steps.videos.status;
   const list = clips ?? [];
   const prov = providers.find((p) => p.id === cfg.provider);
@@ -29,8 +31,8 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
     api.getSettings().then(setSettings);
   }, []);
   useEffect(() => {
-    api.estimate(cfg.provider, list.length || 3).then(setEstimate);
-  }, [cfg.provider, list.length]);
+    api.estimate(cfg.provider, list.length || 3, cfg.model).then(setEstimate);
+  }, [cfg.provider, cfg.model, list.length]);
 
   const setCfg = (patch: Partial<VideoClipConfig>) => {
     const next = { ...cfg, ...patch };
@@ -39,20 +41,22 @@ export function VideosStep({ episode, onTarget }: { episode: EpisodeState; onTar
 
   const config = (
     <Card className="p-5">
-      <SectionTitle title="Configuración de los clips" hint={prov?.billing === 'credits' && !settings?.allowPaidProviders ? 'Este proveedor consume créditos. Habilítalo en Ajustes → Proveedores para generar desde aquí.' : 'No se generará nada hasta que pulses Generar.'} right={prov && billingTag(prov, !!settings?.allowPaidProviders)} />
+      <SectionTitle title="Configuración de los clips" hint={prov?.billing === 'credits' && !settings?.allowPaidProviders ? 'Este proveedor consume créditos. Habilítalo en Ajustes → Proveedores para generar desde aquí.' : 'No se generará nada hasta que pulses Generar.'} right={prov && (<div className="flex gap-1">{planTag(prov)}{billingTag(prov, !!settings?.allowPaidProviders)}</div>)} />
       <div className="grid grid-cols-[1.7fr_1fr_0.8fr_1fr] gap-4">
         <Field label="Generar con">
           <Select
             value={cfg.provider}
             onChange={(v) => setCfg({ provider: v })}
-            options={providers.map((p) => ({ value: p.id, label: `${p.name}${p.implemented ? '' : ' · próximamente'}` }))}
+            options={providers.map((p) => ({ value: p.id, label: providerLabel(p) }))}
           />
         </Field>
         <Field label="Modelo">
-          <Select value="veo-3.1-fast" onChange={(v) => setCfg({ model: v })} options={[{ value: 'veo-3.1-fast', label: 'Veo 3.1 Fast' }]} />
+          <Select value={cfg.model} onChange={(v) => setCfg({ model: v })} options={videoModelsFor(cfg.provider).map((m) => ({ value: m.id, label: m.label }))} />
         </Field>
         <Field label="Duración por clip">
-          <Select value={String(cfg.durationS)} onChange={(v) => setCfg({ durationS: Number(v) })} options={[4, 6, 8].map((d) => ({ value: String(d), label: `${d} s` }))} />
+          <div className={cx(inputCls, 'text-mute')} title="Fija: el guion reparte sus tiempos para que el gancho y cada diálogo quepan en un clip de 4 s.">
+            {CLIP_S} s
+          </div>
         </Field>
         <Field label="Resolución">
           <Select value={cfg.resolution} onChange={(v) => setCfg({ resolution: v as VideoClipConfig['resolution'] })} options={[{ value: '1080p', label: '1080p · 9:16' }, { value: '720p', label: '720p · 9:16' }]} />

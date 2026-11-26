@@ -101,7 +101,7 @@ function registerIpc() {
   handle('secretStatus', () => secretStatus());
   handle('secretLabels', () => SECRET_LABELS);
   handle('providers', () => PROVIDERS);
-  handle('estimate', (id: string, units: number) => estimate(id, units));
+  handle('estimate', (id: string, units: number, model?: string) => estimate(id, units, model));
   handle('diagnostics', () => runDiagnostics(loadSettings()));
   handle('playbookSections', () => sectionStatus(activePlaybook(loadSettings())));
   handle('playbookConfigOrigin', () => { const c = loadConfig(activePlaybook(loadSettings())); return { origin: c.origin, error: c.error }; });

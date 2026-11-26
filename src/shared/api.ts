@@ -79,7 +79,7 @@ export interface AdflowApi {
   secretStatus(): Promise<Record<string, boolean>>;
   secretLabels(): Promise<Record<string, string>>;
   providers(): Promise<ProviderInfo[]>;
-  estimate(providerId: string, units: number): Promise<string>;
+  estimate(providerId: string, units: number, model?: string): Promise<string>;
   diagnostics(): Promise<DiagnosticItem[]>;
   playbookSections(): Promise<{ id: string; title: string; found: boolean }[]>;
   playbookConfigOrigin(): Promise<{ origin: 'playbook' | 'preset' | 'empty'; error?: string }>;

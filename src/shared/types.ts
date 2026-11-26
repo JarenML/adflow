@@ -34,6 +34,8 @@ export interface ProviderInfo {
   secret?: string;
   /** Short note about cost, shown next to estimates. */
   costNote: string;
+  /** Lowest plan of the provider's account that can use it (e.g. "Creator"), shown as a tag. */
+  minPlan?: string;
 }
 
 export interface StepState {

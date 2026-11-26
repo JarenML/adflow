@@ -161,11 +161,16 @@ const CLIP_FORMAT = (example: ClipScene) => `{
       "archivo": "video/${example.id.toLowerCase()}.mp4",
       "prompt": "prompt en inglés con el bloque fijo de reglas para clips, la vestimenta completa del personaje y, si hay diálogo, la frase en español entre comillas",
       "audio": ${example.dialogue ? 'true' : 'false'},
-      "duracion_s": 4,
+      "duracion_s": ${MAX_CLIP_S},
       "motivo": "una frase corta: por qué esta escena necesita movimiento real"
     }
   ]
 }`;
+
+/** Every clip is generated at MAX_CLIP_S: the character's line has to fit, or Veo cuts it or rushes it. */
+const CLIP_TIMING = `Cada clip dura exactamente ${MAX_CLIP_S} s. Si la escena tiene diálogo, la frase entre comillas del prompt se
+tiene que poder decir con calma en unos ${MAX_CLIP_S - 0.5} s (unas 8–10 palabras como máximo): usa la del guion tal cual y
+no le agregues palabras. Describe una sola acción que quepa en ese tiempo.`;
 
 const clipLine = (s: ClipScene) => `- ${s.id} · ${s.image} · ${s.dialogue ? `con diálogo (audio true): «${s.dialogue}»` : 'sin diálogo (audio false)'}`;
 
@@ -180,6 +185,7 @@ ${scenes.map(clipLine).join('\n')}
 Lee escenas.json (lo que pasa en cada escena) y prompts_imagenes.json (personajes y vestimenta) y escribe
 prompts_video.json con una entrada por escena de la lista, en ese orden:
 ${CLIP_FORMAT(scenes[0])}
+${CLIP_TIMING}
 Escribe además prompts_firefly.md con los mismos prompts legibles para quien los genere a mano.
 No cambies escenas.json ni otros archivos.`;
 }
@@ -194,11 +200,12 @@ ${clipLine(scene)}
 Agrega su entrada a prompts_video.json (no cambies las demás) y su sección a prompts_firefly.md, con el
 mismo formato:
 ${CLIP_FORMAT(scene)}
+${CLIP_TIMING} Si la frase de esta escena no cabe, acórtala en el prompt del clip y dilo en tu respuesta.
 No cambies escenas.json ni otros archivos.`;
 }
 
 export function videoFeedbackPrompt(sceneId: string | undefined, message: string): string {
-  return `La persona revisó ${sceneId ? `el clip de ${sceneId}` : 'los clips'} y pide:\n\n"${message}"\n\nCorrige el prompt afectado en prompts_video.json y en prompts_firefly.md. No agregues ni quites clips: eso lo decide el guion.`;
+  return `La persona revisó ${sceneId ? `el clip de ${sceneId}` : 'los clips'} y pide:\n\n"${message}"\n\nCorrige el prompt afectado en prompts_video.json y en prompts_firefly.md. No agregues ni quites clips: eso lo decide el guion.\n\n${CLIP_TIMING} Si lo que pide no cabe en ${MAX_CLIP_S} s, ajústalo para que quepa y dilo en tu respuesta.`;
 }
 
 export function adCopyPrompt(): string {
@@ -228,7 +235,39 @@ export function adCopyFeedbackPrompt(message: string): string {
   return `La persona revisó el texto del anuncio y pide:\n\n"${message}"\n\nAplícalo en anuncio.md sin cambiar el formato.`;
 }
 
-export function renderPrompt(material: string): string {
+/** How the music of the video is made, as the render prompt tells Claude (see shared/music.ts). */
+export type RenderMusic = { kind: 'none' } | { kind: 'elevenlabs' } | { kind: 'claude'; numpy: boolean };
+
+const MUSIC_TIMES = `public/musica/tiempos.json con los segundos de TU montaje:
+  {"total_s": duración total, "logo": [inicio, fin] del logo, "drop_s": inicio de la primera escena
+  real del «después» (el drop), "final": [inicio, fin] de la escena final}`;
+
+const MUSIC_RULES = `con las reglas del playbook §4: calla en el logo (fundido de 0,15 s; la plantilla trae su
+  audio), entra el drop en la primera escena real del «después», y en la escena final sigue baja bajo
+  la voz del narrador y se corta (fundido de 0,1 s) a los 4,85 s de esa escena`;
+
+function musicBlock(m: RenderMusic): string {
+  if (m.kind === 'none') return '- Música: este episodio va sin música (MUSIC_FILE = null).';
+  if (m.kind === 'elevenlabs')
+    return `- Música (ElevenLabs Music, la genera AdFlow después de tu montaje y calzada a tus tiempos):
+  escribe ${MUSIC_TIMES}.
+  En src/audio.tsx usa MUSIC_FILE = 'musica.mp3' (solo el nombre: el código ya antepone musica/;
+  todavía no existe, AdFlow la crea en public/musica/ antes del
+  render) ${MUSIC_RULES}.`;
+  return `- Música (la compones tú en código, playbook §4 opción 3): escribe ../musica/componer.py, que
+  genere ../musica/musica.wav (44,1 kHz, estéreo, 16 bits) con la duración exacta de tu montaje:
+  tensión en tono menor → silencio en el logo → solución en mayor con energía media → drop en la
+  primera escena real del «después» → baja bajo la voz en la escena final y corte a los 4,85 s. Debe
+  sonar a producción, no a demo de sintetizador, y dejar libre el rango de la voz (evita 300–3000 Hz
+  al frente). ${m.numpy ? 'Puedes usar numpy (está instalado).' : 'Usa solo la biblioteca estándar de Python (wave, math, struct, random): numpy no está instalado.'}
+  Usa rutas relativas al propio script (os.path.dirname(__file__)), no al directorio actual. No lo
+  ejecutes: AdFlow lo corre después de tu montaje y deja el WAV en
+  public/musica/. Escribe también ${MUSIC_TIMES}.
+  En src/audio.tsx usa MUSIC_FILE = 'musica.wav' (solo el nombre: el código ya antepone musica/)
+  ${MUSIC_RULES}.`;
+}
+
+export function renderPrompt(material: string, music: RenderMusic = { kind: 'none' }): string {
   return `Pasos 8 y 9 del playbook: ensamblar el video final en Remotion.
 
 Tu directorio de trabajo es el proyecto Remotion del episodio (ya instalado). La carpeta del episodio
@@ -239,7 +278,8 @@ Haz el montaje completo según escenas.json y el playbook:
   escenas, sus duraciones (voz + retraso + 0,1–0,25 s), transiciones del mapa, puente al logo,
   <EscenaLogo /> y <EscenaFinal /> de las plantillas. Total dentro de la duración del playbook.
 - src/voz.tsx: registra las tomas de public/voz/ y en qué escena va cada una, con subtítulos.
-- src/audio.tsx: efectos de public/sfx/ y música (si no hay, MUSIC_FILE = null).
+- src/audio.tsx: efectos de public/sfx/ y la música.
+${musicBlock(music)}
 - Escenas 2D: créalas en src/scenes/ reutilizando las piezas de ui.tsx, flat.tsx y los ejemplos.
 - Imágenes: staticFile('escenas/…'); clips: staticFile('clips/…'). Una escena real sin clip usa la
   imagen con Still (acercamiento y paneo).
@@ -251,12 +291,37 @@ Si falta material (una voz o un clip), arma la escena con lo que hay y dilo en t
 ${material}`;
 }
 
-export function renderFeedbackPrompt(message: string): string {
+export function renderFeedbackPrompt(message: string, music: RenderMusic = { kind: 'none' }): string {
+  // The music instructions go with every change: the project may have been assembled before music
+  // was chosen, and a change of durations must keep it in time.
+  const keep =
+    music.kind === 'none'
+      ? ''
+      : `\n\nMúsica de este episodio (si el proyecto aún no la tiene, agrégala así; si cambias duraciones,
+actualiza public/musica/tiempos.json${music.kind === 'claude' ? ' y ../musica/componer.py' : ''} para que siga calzando):
+${musicBlock(music)}`;
   return `La persona vio el video renderizado y pide este cambio:
 
 "${message}"
 
-Aplícalo sobre el mismo proyecto (no cambies lo que no pidió). AdFlow vuelve a renderizar al terminar.`;
+Aplícalo sobre el mismo proyecto (no cambies lo que no pidió). AdFlow vuelve a renderizar al terminar.${keep}`;
+}
+
+/** The music chosen in Preparación is not in the assembled project yet (or it changed): add it. */
+export function musicAddPrompt(music: RenderMusic): string {
+  if (music.kind === 'none')
+    return 'Este episodio ahora va sin música: en src/audio.tsx pon MUSIC_FILE = null. No cambies nada más.';
+  return `Este episodio ahora lleva música y el montaje todavía no la tiene. Agrégala al proyecto tal como
+está, sin cambiar escenas, duraciones ni voces:
+${musicBlock(music)}`;
+}
+
+export function musicFixPrompt(error: string): string {
+  return `AdFlow ejecutó ../musica/componer.py y falló con este error:
+
+${error}
+
+Corrige el script (que siga escribiendo ../musica/musica.wav con la misma música). No lo ejecutes.`;
 }
 
 export function renderFixPrompt(error: string): string {

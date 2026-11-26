@@ -23,6 +23,16 @@ export function billingTag(p: ProviderInfo, allowPaid: boolean) {
   );
 }
 
+/** The provider's name in a select, with its minimum plan and whether it is not built yet. */
+export function providerLabel(p: ProviderInfo): string {
+  return `${p.name}${p.minPlan ? ` · Plan ${p.minPlan}+` : ''}${p.implemented ? '' : ' · próximamente'}`;
+}
+
+/** Small tag with the lowest plan that can use the provider. */
+export function planTag(p: ProviderInfo) {
+  return p.minPlan ? <Tag>Plan {p.minPlan}+</Tag> : null;
+}
+
 export interface PrepChoice {
   providers: Record<Capability, string>;
   account: string;
@@ -77,13 +87,16 @@ export function PrepOptions({
                     onChange={(v) => onChange({ providers: { ...value.providers, [cap.id]: v } })}
                     options={opts.map((p) => ({
                       value: p.id,
-                      label: `${p.name}${p.implemented ? '' : ' · próximamente'}`,
+                      label: providerLabel(p),
                       disabled: !p.implemented || (p.billing === 'credits' && !allowPaid),
                     }))}
                   />
                   {current && <p className="mt-1.5 text-[11px] text-faint">{current.costNote}</p>}
                 </div>
-                <div className="w-28 text-right">{current && billingTag(current, allowPaid)}</div>
+                <div className="flex w-36 justify-end gap-1">
+                  {current && planTag(current)}
+                  {current && billingTag(current, allowPaid)}
+                </div>
               </div>
             );
           })}

@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { runBrain, type BrainEvent, type BrainUsageTag } from '../brain/claudeCli';
+import { videoModel } from '@shared/videoModels';
 
 const EL = 'mcp__claude_ai_ElevenLabs__';
 
@@ -24,9 +25,6 @@ export const MCP_CLIP_TOOLS = [
   'creative_get_flow_run_status',
 ].map((t) => EL + t);
 
-/** Credits Veo 3.1 Fast charges per second of clip, with some margin for the cap. */
-const CREDITS_PER_SECOND = 910;
-
 export interface McpClipJob {
   /** Episode folder (Claude's working directory). */
   dir: string;
@@ -36,6 +34,8 @@ export interface McpClipJob {
   /** Output MP4 relative to dir. */
   file: string;
   prompt: string;
+  /** Veo model (a VIDEO_MODELS id). */
+  videoModel: string;
   durationS: number;
   resolution: '720p' | '1080p';
   audio: boolean;
@@ -66,13 +66,14 @@ export function clipDuration(seconds: number): 4 | 6 | 8 {
 
 export function mcpClipPrompt(job: McpClipJob, imageAbs: string, size: number, resultFile: string): string {
   const duration = clipDuration(job.durationS);
-  const maxCredits = Math.round(duration * CREDITS_PER_SECOND * 1.15);
+  const veo = videoModel(job.videoModel);
+  const maxCredits = Math.round(duration * veo.creditsPerSecond * 1.15);
   const mime = /\.jpe?g$/i.test(imageAbs) ? 'image/jpeg' : /\.webp$/i.test(imageAbs) ? 'image/webp' : 'image/png';
   return `Genera el clip de la escena ${job.sceneId} con las herramientas de ElevenLabs, siguiendo esta receta al pie de la letra.
 
 Datos:
 - Imagen (primer fotograma): ${imageAbs} · ${mime} · ${size} bytes
-- Modelo: veo-3.1-fast-generate-001
+- Modelo: ${veo.elevenId}
 - Parámetros: duration_secs ${duration}, aspect_ratio "9:16", resolution "${job.resolution}", generate_audio ${job.audio}
 - Precio máximo: ${maxCredits} créditos
 - Prompt (úsalo tal cual, sin cambiar una palabra):

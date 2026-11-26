@@ -4,7 +4,7 @@ import { MAX_RENDERS } from '@shared/types';
 import type { Capability, DiagnosticItem, PlaybookSyncStatus, ProviderInfo, Settings } from '@shared/types';
 import { api } from '../lib/api';
 import { Button, Card, cx, Field, inputCls, SectionTitle, Select, Tag } from '../components/ui';
-import { billingTag } from '../steps/PrepStep';
+import { billingTag, planTag, providerLabel } from '../steps/PrepStep';
 import { AboutTab } from './AboutTab';
 
 type Tab = 'playbook' | 'brain' | 'providers' | 'queue' | 'diagnostics' | 'about';
@@ -305,7 +305,7 @@ export function SettingsView() {
                     <Select
                       value={s.defaults[cap]}
                       onChange={(v) => save({ ...s, defaults: { ...s.defaults, [cap]: v } })}
-                      options={providers.filter((p) => p.capability === cap).map((p) => ({ value: p.id, label: `${p.name}${p.implemented ? '' : ' · próximamente'}`, disabled: !p.implemented }))}
+                      options={providers.filter((p) => p.capability === cap).map((p) => ({ value: p.id, label: providerLabel(p), disabled: !p.implemented }))}
                     />
                   </div>
                 ))}
@@ -320,6 +320,7 @@ export function SettingsView() {
                       <p className="text-[13px] font-semibold">{p.name}</p>
                       <div className="flex gap-1">
                         <Tag>{CAP_LABEL[p.capability]}</Tag>
+                        {planTag(p)}
                         {billingTag(p, s.allowPaidProviders)}
                       </div>
                     </div>

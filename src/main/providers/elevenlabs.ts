@@ -3,13 +3,23 @@
 // pipeline only calls them when paid providers are allowed in Settings.
 import fs from 'node:fs';
 import path from 'node:path';
+import { videoModel } from '@shared/videoModels';
 
 const API = 'https://api.elevenlabs.io';
 
 async function fail(res: Response, what: string): Promise<never> {
   const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
   const detail = typeof body.detail === 'string' ? body.detail : body.detail ? JSON.stringify(body.detail) : '';
-  const hint = res.status === 401 ? ' (revisa la clave de API)' : res.status === 402 ? ' (la API de imagen y video necesita plan Pro o superior)' : '';
+  const hint =
+    res.status === 401
+      ? ' (revisa la clave de API)'
+      : res.status === 402
+        ? what.includes('música')
+          ? ' (sin créditos suficientes o el plan no incluye música)'
+          : ' (la API de imagen y video necesita plan Pro o superior)'
+        : res.status === 403 && what.includes('música')
+          ? ' (la clave necesita el permiso music_generation)'
+          : '';
   throw new Error(`ElevenLabs no pudo ${what}: ${res.status}${hint}${detail ? ` · ${detail.slice(0, 300)}` : ''}`);
 }
 
@@ -29,6 +39,24 @@ export async function elevenSpeech(key: string, voiceId: string, text: string, o
 }
 
 /**
+ * An instrumental track from a composition plan (ElevenLabs Music, music_v1), saved as MP3. Its
+ * sections follow the video's timeline (shared/music.ts). Takes about a minute.
+ */
+export async function elevenMusic(key: string, plan: unknown, outFile: string, signal?: AbortSignal): Promise<string> {
+  const timeout = AbortSignal.timeout(300_000);
+  const res = await fetch(`${API}/v1/music?output_format=mp3_44100_128`, {
+    method: 'POST',
+    headers: { 'xi-api-key': key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ composition_plan: plan, model_id: 'music_v1' }),
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+  });
+  if (!res.ok) await fail(res, 'generar la música');
+  fs.mkdirSync(path.dirname(outFile), { recursive: true });
+  fs.writeFileSync(outFile, Buffer.from(await res.arrayBuffer()));
+  return outFile;
+}
+
+/**
  * Credits the account has used this period (character_count of the subscription), or null when the
  * key may not read it. Read before and after a run to log what it really spent.
  */
@@ -42,11 +70,6 @@ export async function elevenUsedCredits(key: string): Promise<number | null> {
     return null;
   }
 }
-
-const VIDEO_MODELS: Record<string, string> = {
-  'veo-3.1-fast': 'veo-3.1-fast-generate-001',
-  'veo-3.1': 'veo-3.1-generate-001',
-};
 
 export interface ClipJob {
   key: string;
@@ -80,7 +103,7 @@ export async function elevenClip(job: ClipJob): Promise<string> {
     method: 'POST',
     headers,
     body: JSON.stringify({
-      model_id: VIDEO_MODELS[job.model] ?? VIDEO_MODELS['veo-3.1-fast'],
+      model_id: videoModel(job.model).elevenId,
       prompt: job.prompt,
       start_frame: { type: 'inline_base64', content_base64: fs.readFileSync(job.image).toString('base64'), mime_type: mime },
       aspect_ratio: '9:16',

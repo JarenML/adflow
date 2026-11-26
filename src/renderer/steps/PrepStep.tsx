@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import { Button, Card, cx, SectionTitle } from '../components/ui';
 import { PrepOptions, type PrepChoice } from '../components/PrepOptions';
 
-export { billingTag } from '../components/PrepOptions';
+export { billingTag, planTag, providerLabel } from '../components/PrepOptions';
 
 const SOURCE_HINT: Record<string, string> = {
   'produccion-redes': 'Episodio de Producción de redes.',
