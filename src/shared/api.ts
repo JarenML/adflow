@@ -19,6 +19,7 @@ import type {
   VoiceOption,
 } from './types';
 import type { Script, ScriptCheck } from './schemas';
+import type { FinalVideoUploads, RemoteVideo, VideoUploadProgress } from './finalVideo';
 
 /** An update downloaded and installed when AdFlow closes (or now, with restartToUpdate). */
 export interface UpdateState {
@@ -117,7 +118,11 @@ export interface AdflowApi {
   voiceById(providerId: string, voiceId: string): Promise<VoiceOption>;
   voiceSample(voiceId: string, previewUrl: string): Promise<string>;
   adCopy(id: string): Promise<string | null>;
-  finalVideo(id: string): Promise<{ file: string; url: string } | null>;
+  finalVideo(id: string): Promise<{ file: string; url: string; size: number } | null>;
+  /** The versions of the final video already in the team admin (Producción de redes episodes). */
+  finalVideoUploads(id: string): Promise<FinalVideoUploads>;
+  /** «Subir video final»: uploads the newest render; progress arrives as 'videoUpload' events. */
+  uploadFinalVideo(id: string): Promise<RemoteVideo>;
   renderReport(id: string): Promise<RenderReport | null>;
 
   openPath(p: string): Promise<void>;
@@ -142,6 +147,7 @@ export interface AdflowApi {
   on(channel: 'queue', cb: (q: QueueSnapshot) => void): () => void;
   on(channel: 'update', cb: (u: UpdateState) => void): () => void;
   on(channel: 'claudeUsage', cb: (u: ClaudeUsage) => void): () => void;
+  on(channel: 'videoUpload', cb: (p: VideoUploadProgress) => void): () => void;
 }
 
 export const API_METHODS = [
@@ -162,6 +168,8 @@ export const API_METHODS = [
   'storagePath',
   'adCopy',
   'finalVideo',
+  'finalVideoUploads',
+  'uploadFinalVideo',
   'renderReport',
   'library',
   'sourceBrief',

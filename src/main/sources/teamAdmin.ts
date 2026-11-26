@@ -3,9 +3,11 @@
 // taking an episode assigns it, and every change of status is reported. Reports that cannot be sent
 // (no connection) wait in an outbox and go out with the next call.
 import fs from 'node:fs';
+import https from 'node:https';
 import path from 'node:path';
 import type { Playbook, SourceEpisode, StepId, TeamProgress, TeamStatus } from '@shared/types';
 import { stepLabel } from '@shared/progress';
+import { videoContentType, type RemoteVideo } from '@shared/finalVideo';
 import { getDataDir, loadSettings, writeJson } from '../store';
 import type { EpisodeSource } from './types';
 
@@ -87,13 +89,75 @@ async function api<T>(route: string, init: { method?: string; body?: unknown } =
           ? 'El token de AdFlow no es válido o fue revocado.'
           : json.code === 'adflow_forbidden'
             ? 'Tu usuario no tiene acceso a Producción de redes.'
-            : (json.error ?? `El panel de administración respondió con el código ${res.status}.`);
+            : json.code && VIDEO_ERRORS[json.code]
+              ? VIDEO_ERRORS[json.code]
+              : (json.error ?? `El panel de administración respondió con el código ${res.status}.`);
     throw new TeamApiError(msg, res.status, json.code);
   }
   return json as T;
 }
 
 const remoteId = (episodeId: string) => Number(episodeId.replace(/^team:/, ''));
+
+/** What the admin answers when a final video cannot be uploaded (codes of robles.ai's socialRoutes). */
+const VIDEO_ERRORS: Record<string, string> = {
+  social_video_storage_off: 'El panel de administración todavía no tiene configurado el almacenamiento de videos.',
+  social_video_too_big: 'El video es demasiado grande para subirlo.',
+  social_video_bad_type: 'Solo se pueden subir videos MP4, MOV o WebM.',
+  social_video_bad_key: 'El panel de administración no reconoció la subida.',
+  social_video_missing: 'El archivo no llegó al almacenamiento. Vuelve a intentarlo.',
+  social_video_storage_error: 'Google Cloud Storage no respondió. Vuelve a intentarlo.',
+};
+
+// ── Final video («Subir video final») ────────────────────────────────────────────────────────
+
+/** The versions of the final video the admin keeps, and whether it has a bucket. */
+export function listFinalVideos(episodeId: string) {
+  return api<{ videos: RemoteVideo[]; storage: boolean }>(`/episodes/${remoteId(episodeId)}/videos`);
+}
+
+/** PUTs the file to the signed URL, reporting bytes sent. Content-Length is set, as the URL expects. */
+function putFile(url: string, file: string, contentType: string, size: number, onProgress: (sent: number) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const req = https.request(url, { method: 'PUT', headers: { 'Content-Type': contentType, 'Content-Length': size }, timeout: 120_000 }, (res) => {
+      let body = '';
+      res.on('data', (c) => (body += c));
+      res.on('end', () =>
+        res.statusCode && res.statusCode < 300
+          ? resolve()
+          : reject(new TeamApiError(`El almacenamiento rechazó el video (${res.statusCode}). ${/<Message>([^<]+)/.exec(body)?.[1] ?? ''}`.trim(), res.statusCode ?? 0)),
+      );
+    });
+    req.on('timeout', () => req.destroy(new Error('la conexión se quedó sin respuesta')));
+    req.on('error', (err) => reject(new TeamApiError(`Se cortó la subida del video: ${err.message}`, 0)));
+    let sent = 0;
+    const stream = fs.createReadStream(file);
+    stream.on('data', (chunk) => {
+      sent += chunk.length;
+      onProgress(sent);
+    });
+    stream.on('error', (err) => req.destroy(err));
+    stream.pipe(req);
+  });
+}
+
+/**
+ * Uploads the final video: asks the admin for a signed URL (one file, a few minutes), sends the file
+ * straight to the bucket and tells the admin it is there, which records it as the current version.
+ */
+export async function uploadFinalVideo(episodeId: string, file: string, onProgress: (sent: number, total: number) => void): Promise<RemoteVideo> {
+  const contentType = videoContentType(file);
+  if (!contentType) throw new TeamApiError(VIDEO_ERRORS.social_video_bad_type, 400, 'social_video_bad_type');
+  const size = fs.statSync(file).size;
+  const id = remoteId(episodeId);
+  const target = await api<{ uploadUrl: string; objectKey: string; contentType: string }>(`/episodes/${id}/video/upload-url`, {
+    method: 'POST',
+    body: { size, contentType },
+  });
+  onProgress(0, size);
+  await putFile(target.uploadUrl, file, target.contentType, size, (sent) => onProgress(sent, size));
+  return api<RemoteVideo>(`/episodes/${id}/video/complete`, { method: 'POST', body: { objectKey: target.objectKey, fileName: path.basename(file) } });
+}
 
 export const fetchPlaybookManifest = () => api<PlaybookManifest>('/playbook');
 

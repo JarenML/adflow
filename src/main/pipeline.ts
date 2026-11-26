@@ -420,11 +420,11 @@ export class Pipeline {
   }
 
   /** Newest MP4 at the top of the episode folder (where the final render goes). */
-  finalVideo(id: string): { file: string; url: string } | null {
+  finalVideo(id: string): { file: string; url: string; size: number } | null {
     const dir = this.get(id).dir;
     const mp4 = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.mp4')) : [];
-    const pick = mp4.map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs })).sort((a, b) => b.t - a.t)[0]?.f;
-    return pick ? { file: pick, url: fileUrl(path.join(dir, pick)) } : null;
+    const pick = mp4.map((f) => ({ f, st: fs.statSync(path.join(dir, f)) })).sort((a, b) => b.st.mtimeMs - a.st.mtimeMs)[0];
+    return pick ? { file: pick.f, url: fileUrl(path.join(dir, pick.f)), size: pick.st.size } : null;
   }
 
   private activity(id: string, step: StepId, kind: ActivityEvent['kind'], text: string) {

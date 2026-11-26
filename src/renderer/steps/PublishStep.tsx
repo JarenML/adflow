@@ -1,8 +1,9 @@
 // Publication: the final video, the ad text and link Claude writes, and where it was published.
 // Marking it published moves the episode to «Publicado» for the whole team.
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Copy, ExternalLink, FolderOpen, Megaphone, RotateCcw, Send, Wand2 } from 'lucide-react';
+import { Check, CloudUpload, Copy, ExternalLink, FolderOpen, Megaphone, RotateCcw, Send, Wand2 } from 'lucide-react';
 import type { EpisodeState } from '@shared/types';
+import { uploadedAs, type FinalVideoUploads } from '@shared/finalVideo';
 import { api, useLive } from '../lib/api';
 import { Button, Card, cx, Empty, Field, inputCls, SectionTitle, Select, TeamStatusPill } from '../components/ui';
 import { toTeamStatus } from '@shared/progress';
@@ -43,6 +44,86 @@ function CopyBox({ label, value, mono }: { label: string; value: string; mono?: 
         </button>
       </div>
       <p className={cx('selectable whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink', mono && 'break-all font-mono text-[12px]')}>{value}</p>
+    </div>
+  );
+}
+
+const shortDate = (iso: string) => new Date(iso).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const mb = (bytes: number) => `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+
+/**
+ * «Subir video final»: sends the newest render to the team admin, which keeps every version. Separate
+ * from approving the render. If it fails, the message shows under the button and it can be retried.
+ */
+function UploadFinalVideo({ episode, video }: { episode: EpisodeState; video: { file: string; size: number } | null | undefined }) {
+  const [info, reload] = useLive<FinalVideoUploads>(() => api.finalVideoUploads(episode.id), [episode.id], episode.id);
+  const [progress, setProgress] = useState<{ sent: number; total: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<number | null>(null);
+
+  useEffect(
+    () =>
+      api.on('videoUpload', (p) => {
+        if (p.episodeId === episode.id) setProgress({ sent: p.sent, total: p.total });
+      }),
+    [episode.id],
+  );
+
+  if (!info?.team) return null;
+  const uploading = progress !== null;
+  const latest = info.videos.find((v) => v.isCurrent) ?? info.videos[0];
+  // The same render (name and size) already went up: say so, but still allow uploading it again.
+  const same = video ? uploadedAs(video, info.videos) : null;
+
+  const upload = async () => {
+    setError(null);
+    setDone(null);
+    setProgress({ sent: 0, total: 0 });
+    try {
+      const v = await api.uploadFinalVideo(episode.id);
+      setDone(v.version);
+      reload();
+    } catch (err) {
+      // Electron wraps the message: «Error invoking remote method 'adflow:…': Error: <message>».
+      setError(String((err as Error).message ?? err).replace(/^.*?Error: /, ''));
+    } finally {
+      setProgress(null);
+    }
+  };
+
+  const pct = progress && progress.total ? Math.round((progress.sent / progress.total) * 100) : 0;
+  return (
+    <div className="space-y-2 border-t border-line p-3">
+      <Button
+        size="sm"
+        variant="primary"
+        className="w-full justify-center"
+        icon={<CloudUpload className="size-3.5" />}
+        disabled={!video || uploading}
+        onClick={() => void upload()}
+      >
+        {uploading ? `Subiendo… ${pct} %` : 'Subir video final'}
+      </Button>
+      {uploading && (
+        <div className="h-1.5 overflow-hidden rounded-full bg-panel-2" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+          <div className="h-full bg-brand transition-[width]" style={{ width: `${pct}%` }} />
+        </div>
+      )}
+      {error && <p className="text-[11.5px] leading-snug text-bad" role="alert">No se pudo subir el video final: {error}</p>}
+      {!error && done !== null && <p className="text-[11.5px] text-ok">Video final subido como versión {done}.</p>}
+      {!error && done === null && !uploading && (
+        <p className="text-[11.5px] leading-snug text-faint">
+          {info.error
+            ? `No se pudo consultar el panel de administración: ${info.error}`
+            : !info.storage
+              ? 'El panel de administración todavía no tiene configurado el almacenamiento de videos.'
+              : same
+                ? `Este render ya se subió como versión ${same.version}.`
+                : latest
+                  ? `Última versión subida: v${latest.version} · ${shortDate(latest.createdAt)} · ${mb(latest.size)}`
+                  : 'Aún no se subió ningún video final de este episodio.'}
+        </p>
+      )}
     </div>
   );
 }
@@ -99,6 +180,7 @@ export function PublishStep({ episode }: { episode: EpisodeState }) {
               Carpeta
             </Button>
           </div>
+          <UploadFinalVideo episode={episode} video={video} />
         </Card>
 
         <div className="min-w-0 space-y-5">

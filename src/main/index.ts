@@ -8,7 +8,7 @@ import { runDiagnostics } from './diagnostics';
 import { fileUrl, Pipeline } from './pipeline';
 import { loadConfig, sectionStatus } from './playbook';
 import { sourceInfos } from './sources';
-import { checkTeamConnection, TEAM_TOKEN_SECRET } from './sources/teamAdmin';
+import { checkTeamConnection, listFinalVideos, TEAM_TOKEN_SECRET, uploadFinalVideo } from './sources/teamAdmin';
 import { PROVIDERS, SECRET_LABELS, estimate } from './providers/registry';
 import { listVoices, voiceById, voiceSample } from './providers/voices';
 import { getSecrets, secretStatus, setSecret } from './secrets';
@@ -121,6 +121,35 @@ function registerIpc() {
   handle('storagePath', () => episodesDir(loadSettings()));
   handle('adCopy', (id: string) => pipeline.adCopy(id));
   handle('finalVideo', (id: string) => pipeline.finalVideo(id));
+  // «Subir video final»: only episodes of Producción de redes have somewhere to go.
+  const teamEpisode = (id: string) => {
+    const e = pipeline.get(id);
+    return e.source?.id === 'produccion-redes' ? e.source.episodeId : null;
+  };
+  handle('finalVideoUploads', async (id: string) => {
+    const remote = teamEpisode(id);
+    if (!remote) return { team: false, storage: false, videos: [] };
+    try {
+      const r = await listFinalVideos(remote);
+      return { team: true, storage: r.storage, videos: r.videos };
+    } catch (err) {
+      return { team: true, storage: false, videos: [], error: String((err as Error).message ?? err) };
+    }
+  });
+  handle('uploadFinalVideo', async (id: string) => {
+    const remote = teamEpisode(id);
+    if (!remote) throw new Error('Este episodio no es de Producción de redes: no hay dónde subir el video final.');
+    const video = pipeline.finalVideo(id);
+    if (!video) throw new Error('Aún no hay video final (.mp4) en la carpeta del episodio.');
+    let last = 0;
+    return uploadFinalVideo(remote, path.join(pipeline.get(id).dir, video.file), (sent, total) => {
+      // About 4 updates per second is plenty for a progress bar.
+      if (sent === total || Date.now() - last > 250) {
+        last = Date.now();
+        broadcast('videoUpload', { episodeId: id, sent, total });
+      }
+    });
+  });
   handle('renderReport', (id: string) => pipeline.renderReport(id));
   handle('library', () => pipeline.library());
   handle('sourceBrief', (id: string) => pipeline.sourceBrief(id));
