@@ -21,11 +21,11 @@ export function Timeline({ episode, selected, onSelect }: { episode: EpisodeStat
   const progress = Math.min(1, approved / (STEPS.length - 1));
 
   return (
-    <div className="relative px-6 pt-6 pb-5">
+    <div className="relative px-6 pt-4 pb-4">
       {/* Track */}
-      <div className="absolute left-[calc(6rem/2+1.5rem)] right-[calc(6rem/2+1.5rem)] top-[3.25rem] h-[2px] rounded-full bg-line" />
+      <div className="absolute left-[calc(6rem/2+1.5rem)] right-[calc(6rem/2+1.5rem)] top-[2.5rem] h-[2px] rounded-full bg-line" />
       <motion.div
-        className="absolute left-[calc(6rem/2+1.5rem)] top-[3.25rem] h-[2px] overflow-hidden rounded-full brand-gradient"
+        className="absolute left-[calc(6rem/2+1.5rem)] top-[2.5rem] h-[2px] overflow-hidden rounded-full brand-gradient"
         initial={false}
         animate={{ width: `calc((100% - 6rem - 3rem) * ${progress})` }}
         transition={{ type: 'spring', stiffness: 60, damping: 18 }}
@@ -53,7 +53,7 @@ export function Timeline({ episode, selected, onSelect }: { episode: EpisodeStat
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.06, duration: 0.35, ease: 'easeOut' }}
             >
-              <div className="relative grid size-14 place-items-center">
+              <div className="relative grid size-12 place-items-center">
                 {st.status === 'working' && (
                   <span className="spin-slow absolute inset-0 rounded-full" style={{ background: 'conic-gradient(from 0deg, transparent 0 55%, #22d3ee 75%, #7c5cff 100%)' }} />
                 )}
@@ -66,7 +66,7 @@ export function Timeline({ episode, selected, onSelect }: { episode: EpisodeStat
                 )}
                 <div
                   className={cx(
-                    'relative z-10 grid size-[50px] place-items-center rounded-full border transition-all duration-300',
+                    'relative z-10 grid size-[42px] place-items-center rounded-full border transition-all duration-300',
                     st.status === 'approved' && 'border-ok/40 bg-[#0f1f1a] text-ok',
                     st.status === 'working' && 'border-transparent bg-panel text-brand-2',
                     st.status === 'review' && 'border-warn/50 bg-[#1f1a0e] text-warn',
@@ -76,10 +76,10 @@ export function Timeline({ episode, selected, onSelect }: { episode: EpisodeStat
                     isSel && 'glow scale-105',
                   )}
                 >
-                  <Icon className="size-[20px]" strokeWidth={1.8} />
+                  <Icon className="size-[18px]" strokeWidth={1.8} />
                 </div>
               </div>
-              <span className={cx('mt-2.5 text-[13px] font-semibold', isSel ? 'text-ink' : st.status === 'locked' ? 'text-faint' : 'text-mute group-hover:text-ink')}>{s.label}</span>
+              <span className={cx('mt-2 whitespace-nowrap text-[13px] font-semibold', isSel ? 'text-ink' : st.status === 'locked' ? 'text-faint' : 'text-mute group-hover:text-ink')}>{s.label}</span>
               <span
                 className={cx(
                   'mt-0.5 text-[11px]',
