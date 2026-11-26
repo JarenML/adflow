@@ -67,7 +67,10 @@ export function Dashboard({ onOpen, onCreate }: { onOpen: (id: string) => void; 
     for (const s of TEAM_STATUSES) c[s] = list.filter((e) => toTeamStatus(e).status === s).length;
     return c;
   }, [list]);
-  const shown = list.filter((e) => filter === 'all' || (filter === 'waiting' ? needsYou(e) : toTeamStatus(e).status === filter));
+  // Most recent first: the date on each card (last activity) decides the order.
+  const shown = list
+    .filter((e) => filter === 'all' || (filter === 'waiting' ? needsYou(e) : toTeamStatus(e).status === filter))
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 
   const filters: [Filter, string][] = [['all', 'Todos'], ...TEAM_STATUSES.map((s) => [s, TEAM_STATUS_LABEL[s]] as [Filter, string])];
 
@@ -118,7 +121,7 @@ export function Dashboard({ onOpen, onCreate }: { onOpen: (id: string) => void; 
           }
         />
       ) : (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-2">
           {shown.map((e, i) => {
             return (
               <motion.button
@@ -127,21 +130,23 @@ export function Dashboard({ onOpen, onCreate }: { onOpen: (id: string) => void; 
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.03 }}
                 onClick={() => onOpen(e.id)}
-                className="no-drag group rounded-2xl border border-line bg-panel p-4 text-left transition-colors hover:border-line-2 hover:bg-[#10131a]"
+                className="no-drag group flex items-center gap-5 rounded-2xl border border-line bg-panel px-4 py-3 text-left transition-colors hover:border-line-2 hover:bg-[#10131a]"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-[14px] font-semibold">{e.title}</p>
-                    <p className="truncate text-[12px] text-faint">{e.businessType}</p>
-                  </div>
-                  <TeamStatusPill progress={toTeamStatus(e)} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-semibold">{e.title}</p>
+                  <p className="truncate text-[12px] text-faint">
+                    {e.businessType}
+                    <span className="ml-2">
+                      <ClaudeCardLine episode={e} usage={claudeUsage} />
+                    </span>
+                  </p>
                 </div>
-                <div className="mt-4 flex items-center justify-between">
+                <div className="shrink-0">
                   <MiniTimeline episode={e} />
-                  <span className="text-[11px] text-faint">{formatDate(e.updatedAt)}</span>
                 </div>
-                <div className="mt-2">
-                  <ClaudeCardLine episode={e} usage={claudeUsage} />
+                <span className="w-32 shrink-0 text-right text-[11px] text-faint">{formatDate(e.updatedAt)}</span>
+                <div className="flex w-56 shrink-0 justify-end">
+                  <TeamStatusPill progress={toTeamStatus(e)} />
                 </div>
               </motion.button>
             );
