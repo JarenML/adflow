@@ -154,7 +154,7 @@ export function runBrain(run: BrainRun): Promise<BrainResult> {
         return;
       }
       if (ev.type === 'rate_limit_event') {
-        limitsReported(ev.rate_limit_info);
+        limitsReported(ev.rate_limit_info, run.configDir);
       } else if (ev.type === 'system' && ev.subtype === 'init') {
         sessionId = ev.session_id;
         emit({ kind: 'start', text: `Sesión ${String(ev.session_id).slice(0, 8)} · ${ev.model ?? ''}` });
@@ -208,4 +208,13 @@ export function runBrain(run: BrainRun): Promise<BrainResult> {
     });
     child.stdin?.end(run.prompt);
   });
+}
+
+/**
+ * The smallest Claude request there is (Haiku, one word back), made only to get Claude Code's
+ * `rate_limit_event` and so the account's current limits.
+ */
+export async function probeClaudeLimits(cwd: string, configDir?: string): Promise<boolean> {
+  const res = await runBrain({ cwd, prompt: 'Responde solo: ok', model: 'haiku', tools: ['Read'], configDir });
+  return res.ok;
 }

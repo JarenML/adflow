@@ -15,7 +15,8 @@ import { getSecrets, secretStatus, setSecret } from './secrets';
 import { activePlaybook, episodesDir, getDataDir, initStore, loadSettings, saveSettings } from './store';
 import { syncTeamPlaybook, teamPlaybookStatus } from './teamPlaybook';
 import { checkForUpdates, downloadUpdate, restartToUpdate, setAutoUpdate, startAutoUpdates, updateState } from './updater';
-import { claudeUsage, initClaudeLimits } from './brain/claudeLimits';
+import { claudeUsage, initClaudeLimits, needsReading, setRefreshing, showAccount, signedInAccount } from './brain/claudeLimits';
+import { probeClaudeLimits } from './brain/claudeCli';
 // Where updates are published (electron-builder's publish config), to link to its releases page.
 import { build as pkgBuild } from '../../package.json';
 
@@ -169,7 +170,59 @@ function registerIpc() {
   handle('checkForUpdates', () => checkForUpdates());
   handle('downloadUpdate', () => downloadUpdate());
   handle('claudeUsage', () => claudeUsage());
+  handle('refreshClaudeUsage', () => refreshClaudeUsage());
   handle('defaults', (cap) => loadSettings().defaults[cap as keyof ReturnType<typeof loadSettings>['defaults']]);
+}
+
+/** The config dir of the default Claude account in Settings (undefined = Claude Code's own sign-in). */
+function defaultClaudeDir(): string | undefined {
+  const { claude } = loadSettings();
+  return claude.accounts.find((a) => a.id === claude.defaultAccount)?.configDir || undefined;
+}
+
+let refreshingUsage: Promise<ReturnType<typeof claudeUsage>> | null = null;
+function refreshClaudeUsage() {
+  refreshingUsage ??= (async () => {
+    const configDir = defaultClaudeDir();
+    showAccount(configDir);
+    setRefreshing(true);
+    try {
+      const cwd = path.join(app.getPath('userData'), 'claude-probe');
+      fs.mkdirSync(cwd, { recursive: true });
+      await probeClaudeLimits(cwd, configDir);
+    } finally {
+      setRefreshing(false);
+      refreshingUsage = null;
+    }
+    return claudeUsage();
+  })();
+  return refreshingUsage;
+}
+
+/**
+ * The limits only arrive with a Claude request, so when Claude Code is signed into another account (or
+ * the default account changes) the panel would keep the previous one's numbers. Every 30 s: follow the
+ * default account, and read an account once if it has never been read.
+ */
+function watchClaudeAccount() {
+  let last: string | undefined;
+  const tried = new Set<string>();
+  const tick = () => {
+    const configDir = defaultClaudeDir();
+    showAccount(configDir);
+    const key = `${configDir ?? ''}|${signedInAccount(configDir)?.id ?? ''}`;
+    if (key !== last) {
+      last = key;
+      broadcast('claudeUsage', claudeUsage());
+    }
+    const unread = needsReading();
+    if (unread && !tried.has(unread.id)) {
+      tried.add(unread.id);
+      void refreshClaudeUsage().catch(() => {});
+    }
+  };
+  tick();
+  setInterval(tick, 30_000);
 }
 
 app.setName('AdFlow');
@@ -178,6 +231,7 @@ if (process.env.ADFLOW_DATA_DIR) app.setPath('userData', process.env.ADFLOW_DATA
 void app.whenReady().then(() => {
   initStore(app.getPath('userData'));
   initClaudeLimits(app.getPath('userData'), (u) => broadcast('claudeUsage', u));
+  watchClaudeAccount();
 
   // adflow://file/<encoded file:// URL> serves local episode files (images, clips, audio).
   protocol.handle('adflow', (req) => {

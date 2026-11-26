@@ -44,10 +44,14 @@ export interface LimitWindow {
 }
 
 export interface ClaudeUsage {
+  /** The email of the account these limits belong to (the default account in Settings). */
+  account?: string;
   fiveHour?: LimitWindow;
   sevenDay?: LimitWindow;
   /** When Claude Code last reported them. */
   at?: string;
+  /** A short Claude request is under way to read them now. */
+  refreshing?: boolean;
   /** Learned from AdFlow's own runs: % of the 5-hour limit per USD equivalent (null until there is enough data). */
   pctPerUsd: number | null;
   samples: number;
@@ -130,6 +134,8 @@ export interface AdflowApi {
   downloadUpdate(): Promise<UpdateState>;
   /** The Claude account's usage limits, as last reported by Claude Code. */
   claudeUsage(): Promise<ClaudeUsage>;
+  /** Reads the limits now with a minimal Claude request (they otherwise update only when AdFlow uses Claude). */
+  refreshClaudeUsage(): Promise<ClaudeUsage>;
 
   on(channel: 'episode', cb: (e: EpisodeState) => void): () => void;
   on(channel: 'activity', cb: (a: ActivityEvent) => void): () => void;
@@ -183,4 +189,5 @@ export const API_METHODS = [
   'checkForUpdates',
   'downloadUpdate',
   'claudeUsage',
+  'refreshClaudeUsage',
 ] as const;

@@ -105,7 +105,7 @@ export default function App() {
             {waiting > 0 && <span className="text-faint">· {waiting} en cola</span>}
           </div>
           {pb && <p className="mt-2 truncate text-[11px] text-faint" title={pb.rootDir}>{pb.name}</p>}
-          {claudeUsage?.fiveHour && (
+          {(claudeUsage?.fiveHour || claudeUsage?.refreshing) && (
             <div className="mt-3 border-t border-line pt-3">
               <LimitBars usage={claudeUsage} />
             </div>

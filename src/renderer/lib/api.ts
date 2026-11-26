@@ -42,7 +42,7 @@ export function useActivity(id: string): ActivityEvent[] {
   return items;
 }
 
-/** The Claude account's usage limits, updated every time AdFlow runs Claude. */
+/** The default Claude account's usage limits, updated every time AdFlow runs Claude (or on request). */
 export function useClaudeUsage(): ClaudeUsage | undefined {
   const [u, setU] = useState<ClaudeUsage>();
   useEffect(() => {

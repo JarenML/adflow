@@ -2,10 +2,11 @@
 // Costs are the USD equivalent Claude Code reports (covered by the subscription, not charged);
 // the % of the 5-hour limit is an estimate learned from AdFlow's own runs (see main/brain/claudeLimits.ts).
 import { useState } from 'react';
-import { Gauge } from 'lucide-react';
+import { Gauge, RefreshCw } from 'lucide-react';
 import type { ClaudeUsage, LimitWindow } from '@shared/api';
 import type { CostEntry, EpisodeState, StepId } from '@shared/types';
 import { STEPS } from '@shared/types';
+import { api } from '../lib/api';
 import { cx } from './ui';
 
 export interface ClaudeTotals {
@@ -77,19 +78,35 @@ function Bar({ label, w, sub, hint }: { label: string; w: LimitWindow; sub: stri
   );
 }
 
-/** The account's 5-hour and weekly limits, as Claude Code last reported them. */
+/** The default account's 5-hour and weekly limits, as Claude Code last reported them. */
 export function LimitBars({ usage }: { usage?: ClaudeUsage }) {
-  if (!usage?.fiveHour) return null;
-  const { fiveHour, sevenDay } = usage;
-  const expired = fiveHour.resetsAt < Date.now();
+  if (!usage?.fiveHour && !usage?.refreshing) return null;
+  const { fiveHour, sevenDay, refreshing } = usage;
+  const expired = fiveHour && fiveHour.resetsAt < Date.now();
   return (
     <div className="space-y-2">
-      <Bar
-        label="Claude · 5 h"
-        w={expired ? { ...fiveHour, pct: 0 } : fiveHour}
-        sub={expired ? 'Restablecido' : `Se restablece a las ${clock(fiveHour.resetsAt)}`}
-        hint="Uso del límite de 5 horas de tu cuenta de Claude, incluido el uso fuera de AdFlow. Se actualiza con cada solicitud de AdFlow."
-      />
+      <div className="flex items-center justify-between gap-2 text-[10.5px] text-faint">
+        <span className="truncate" title={usage.account ? `Cuenta de Claude: ${usage.account}` : undefined}>
+          {usage.account ?? 'Cuenta de Claude'}
+        </span>
+        <button
+          onClick={() => void api.refreshClaudeUsage()}
+          disabled={refreshing}
+          className="no-drag flex shrink-0 items-center gap-1 rounded px-1 transition-colors hover:text-ink disabled:cursor-default disabled:hover:text-faint"
+          title="Consultar ahora el uso de esta cuenta (hace una solicitud mínima a Claude)"
+        >
+          <RefreshCw className={cx('size-3', refreshing && 'animate-spin')} />
+          {refreshing ? 'Consultando' : usage.at ? clock(Date.parse(usage.at)) : ''}
+        </button>
+      </div>
+      {fiveHour && (
+        <Bar
+          label="Claude · 5 h"
+          w={expired ? { ...fiveHour, pct: 0 } : fiveHour}
+          sub={expired ? 'Restablecido' : `Se restablece a las ${clock(fiveHour.resetsAt)}`}
+          hint="Uso del límite de 5 horas de tu cuenta de Claude, incluido el uso fuera de AdFlow. Se actualiza con cada solicitud de AdFlow o con el botón de actualizar."
+        />
+      )}
       {sevenDay && (
         <Bar
           label="Claude · semana"
