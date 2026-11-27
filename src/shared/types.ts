@@ -118,6 +118,8 @@ export interface EpisodeState {
   heygenCreditLimit?: number;
   closingVoice: 'narrator' | 'template';
   videoConfig?: VideoClipConfig;
+  /** The 4:5 for the feeds is rendered with the 9:16 unless this is false (Preparación). */
+  feed45?: boolean;
   costs: CostEntry[];
   versions: Partial<Record<StepId, number>>;
 }
@@ -363,4 +365,7 @@ export interface RenderReport {
   sizeMB: number;
   mastered: boolean;
   note?: string;
+  /** The 4:5 rendered with it (file in the episode folder), or why there is none. */
+  feed?: { file: string; sizeMB: number } | null;
+  feedNote?: string;
 }

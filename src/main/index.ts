@@ -121,6 +121,7 @@ function registerIpc() {
   handle('storagePath', () => episodesDir(loadSettings()));
   handle('adCopy', (id: string) => pipeline.adCopy(id));
   handle('finalVideo', (id: string) => pipeline.finalVideo(id));
+  handle('feedVideo', (id: string) => pipeline.feedVideo(id));
   // «Subir video final»: only episodes of Producción de redes have somewhere to go.
   const teamEpisode = (id: string) => {
     const e = pipeline.get(id);
@@ -141,8 +142,11 @@ function registerIpc() {
     if (!remote) throw new Error('Este episodio no es de Producción de redes: no hay dónde subir el video final.');
     const video = pipeline.finalVideo(id);
     if (!video) throw new Error('Aún no hay video final (.mp4) en la carpeta del episodio.');
+    const dir = pipeline.get(id).dir;
+    const feed = pipeline.feedVideo(id);
+    const files = [{ path: path.join(dir, video.file), format: '9x16' as const }, ...(feed ? [{ path: path.join(dir, feed.file), format: '4x5' as const }] : [])];
     let last = 0;
-    return uploadFinalVideo(remote, path.join(pipeline.get(id).dir, video.file), (sent, total) => {
+    return uploadFinalVideo(remote, files, (sent, total) => {
       // About 4 updates per second is plenty for a progress bar.
       if (sent === total || Date.now() - last > 250) {
         last = Date.now();

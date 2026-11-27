@@ -99,7 +99,7 @@ export interface AdflowApi {
   episodes(): Promise<EpisodeState[]>;
   episode(id: string): Promise<EpisodeState>;
   createEpisode(sourceEpisodeId: string): Promise<EpisodeState>;
-  patchEpisode(id: string, patch: Partial<Pick<EpisodeState, 'providers' | 'voice' | 'voiceCreditLimit' | 'heygenCreditLimit' | 'closingVoice' | 'videoConfig' | 'brain'>>): Promise<EpisodeState>;
+  patchEpisode(id: string, patch: Partial<Pick<EpisodeState, 'providers' | 'voice' | 'voiceCreditLimit' | 'heygenCreditLimit' | 'closingVoice' | 'videoConfig' | 'brain' | 'feed45'>>): Promise<EpisodeState>;
   act(id: string, action: PipelineAction): Promise<void>;
   activity(id: string): Promise<ActivityEvent[]>;
   queue(): Promise<QueueSnapshot>;
@@ -119,10 +119,12 @@ export interface AdflowApi {
   voiceSample(voiceId: string, previewUrl: string): Promise<string>;
   adCopy(id: string): Promise<string | null>;
   finalVideo(id: string): Promise<{ file: string; url: string; size: number } | null>;
+  /** The 4:5 render for the feeds, when there is one. */
+  feedVideo(id: string): Promise<{ file: string; url: string; size: number } | null>;
   /** The versions of the final video already in the team admin (Producción de redes episodes). */
   finalVideoUploads(id: string): Promise<FinalVideoUploads>;
-  /** «Subir video final»: uploads the newest render; progress arrives as 'videoUpload' events. */
-  uploadFinalVideo(id: string): Promise<RemoteVideo>;
+  /** «Subir video final»: uploads the newest render (9:16 and, if there is one, 4:5) as one version; progress arrives as 'videoUpload' events. */
+  uploadFinalVideo(id: string): Promise<RemoteVideo[]>;
   renderReport(id: string): Promise<RenderReport | null>;
 
   openPath(p: string): Promise<void>;
@@ -168,6 +170,7 @@ export const API_METHODS = [
   'storagePath',
   'adCopy',
   'finalVideo',
+  'feedVideo',
   'finalVideoUploads',
   'uploadFinalVideo',
   'renderReport',

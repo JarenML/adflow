@@ -29,7 +29,7 @@ import {
   type Script,
 } from '@shared/schemas';
 import { BRAIN_FILE_TOOLS, onBrainUsage, runBrain, type BrainEvent } from './brain/claudeCli';
-import { masterAudio, mediaDuration, prepareProject, renderVideo, writeMaterialList } from './render';
+import { addAudio, hasFeedComposition, masterAudio, mediaDuration, prepareProject, renderVideo, writeMaterialList } from './render';
 import * as P from './brain/prompts';
 import { episodeSlug, serieSlug } from './playbookParse';
 import { stepContext } from './playbook';
@@ -59,6 +59,9 @@ import {
   saveEpisode,
   writeJson,
 } from './store';
+
+/** The 4:5 render for the feeds sits next to the 9:16 as <slug>-4x5.mp4. */
+const FEED_FILE = /-4x5\.mp4$/i;
 
 export interface PipelineEvents {
   episode: (e: EpisodeState) => void;
@@ -195,7 +198,7 @@ export class Pipeline {
     return e;
   }
 
-  patch(id: string, patch: Partial<Pick<EpisodeState, 'providers' | 'voice' | 'voiceCreditLimit' | 'heygenCreditLimit' | 'closingVoice' | 'videoConfig' | 'brain'>>): EpisodeState {
+  patch(id: string, patch: Partial<Pick<EpisodeState, 'providers' | 'voice' | 'voiceCreditLimit' | 'heygenCreditLimit' | 'closingVoice' | 'videoConfig' | 'brain' | 'feed45'>>): EpisodeState {
     return this.update(id, (e) => Object.assign(e, patch));
   }
 
@@ -419,10 +422,19 @@ export class Pipeline {
     return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
   }
 
-  /** Newest MP4 at the top of the episode folder (where the final render goes). */
+  /** Newest 9:16 MP4 at the top of the episode folder (where the final render goes). */
   finalVideo(id: string): { file: string; url: string; size: number } | null {
+    return this.newestMp4(id, (f) => !FEED_FILE.test(f));
+  }
+
+  /** The 4:5 for the feeds (<slug>-4x5.mp4), when it was rendered. */
+  feedVideo(id: string): { file: string; url: string; size: number } | null {
+    return this.newestMp4(id, (f) => FEED_FILE.test(f));
+  }
+
+  private newestMp4(id: string, keep: (f: string) => boolean): { file: string; url: string; size: number } | null {
     const dir = this.get(id).dir;
-    const mp4 = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.mp4')) : [];
+    const mp4 = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.mp4') && keep(f)) : [];
     const pick = mp4.map((f) => ({ f, st: fs.statSync(path.join(dir, f)) })).sort((a, b) => b.st.mtimeMs - a.st.mtimeMs)[0];
     return pick ? { file: pick.f, url: fileUrl(path.join(dir, pick.f)), size: pick.st.size } : null;
   }
@@ -967,7 +979,7 @@ export class Pipeline {
         allowedTools: ['Bash(npx remotion still:*)', 'Bash(npx remotion compositions:*)', 'Bash(npx tsc:*)'],
       });
     const music = await this.renderMusic(e.providers.music);
-    if (mode === 'build') await brain(P.renderPrompt(material, music), !e.brain.sessions.render);
+    if (mode === 'build') await brain(P.renderPrompt(material, music, e.feed45 !== false), !e.brain.sessions.render);
     if (mode === 'feedback' && message) await brain(P.renderFeedbackPrompt(message, music));
     if (this.get(id).steps.render.status === 'error') return;
 
@@ -1014,10 +1026,73 @@ export class Pipeline {
       }
     });
     const durationS = await mediaDuration(project, final);
-    const report: RenderReport = { at: now(), file: path.basename(final), durationS, sizeMB: Math.round((fs.statSync(final).size / 1048576) * 10) / 10, mastered, note };
+    const mb = (f: string) => Math.round((fs.statSync(f).size / 1048576) * 10) / 10;
+
+    // 5. The 4:5 for the feeds (unless it was turned off in Preparación): same timeline, same audio.
+    let feed: RenderReport['feed'] = null;
+    let feedNote: string | undefined;
+    if (this.get(id).feed45 !== false) {
+      const r = await this.renderFeed(id, project, final, mode, (p) => brain(p), (t, k) => log(t, k));
+      if (r.file) feed = { file: path.basename(r.file), sizeMB: mb(r.file) };
+      feedNote = r.note;
+    }
+
+    const report: RenderReport = { at: now(), file: path.basename(final), durationS, sizeMB: mb(final), mastered, note, feed, feedNote };
     writeJson(this.renderReportFile(id), report);
     log(`Video final: ${report.file} · ${durationS?.toFixed(1) ?? '?'} s · ${report.sizeMB} MB${note ? ` · ${note}` : ''}`, 'result');
-    this.setStatus(id, 'render', 'review', { note: `Listo: ${report.file}` });
+    if (feed) log(`Formato 4:5: ${feed.file} · ${feed.sizeMB} MB`, 'result');
+    else if (feedNote) log(`Sin formato 4:5: ${feedNote}`, 'info');
+    this.setStatus(id, 'render', 'review', { note: `Listo: ${report.file}${feed ? ' + 4:5' : ''}` });
+  }
+
+  /**
+   * The 4:5: Claude adds the «Feed» composition if the project predates it (also on «Renderizar de
+   * nuevo», so older episodes end up like the new ones), AdFlow renders it muted and puts the 9:16's
+   * mastered sound on it. A failure never touches the 9:16.
+   */
+  private async renderFeed(
+    id: string,
+    project: string,
+    final: string,
+    mode: string,
+    brain: (prompt: string) => Promise<unknown>,
+    log: (text: string, kind?: ActivityEvent['kind']) => void,
+  ): Promise<{ file?: string; note?: string }> {
+    const e = this.get(id);
+    let added = false;
+    if (!hasFeedComposition(project)) {
+      log('El proyecto se armó antes del formato 4:5: Claude lo agrega', 'info');
+      const pb = activePlaybook(loadSettings());
+      await brain(P.feedAddPrompt(path.join(path.dirname(resolveIn(pb, pb.masterPrompt)), 'plantilla-proyecto', 'src')));
+      if (!hasFeedComposition(project)) return { note: 'no se pudo agregar la composición «Feed» al proyecto' };
+      added = true;
+    }
+    const render = async () => {
+      let res: Awaited<ReturnType<typeof renderVideo>> = { ok: false, file: '', error: 'No se ejecutó el render.' };
+      await this.queue.add(id, 'render', 'render', 'Render 4:5', async (signal) => {
+        log('Renderiza el formato 4:5 (1080×1350)');
+        res = await renderVideo(project, (pct) => log(`Render 4:5 ${pct} %`, 'info'), signal, clampRenders(loadSettings().concurrency.render), {
+          composition: 'Feed',
+          out: 'out/feed.mp4',
+          muted: true,
+        });
+      });
+      return res;
+    };
+    let res = await render();
+    // A plain re-render never asks Claude for fixes, except for the 4:5 it has just added.
+    if (!res.ok && (mode !== 'rerender' || added)) {
+      log('El render 4:5 falló. Claude está corrigiendo el error', 'info');
+      await brain(P.renderFixPrompt(res.error ?? '', 'Feed'));
+      res = await render();
+    }
+    if (!res.ok) return { note: `el render 4:5 falló (${(res.error ?? '').split('\n').pop()?.slice(0, 200) ?? ''})` };
+    const out = path.join(e.dir, `${e.slug}-4x5.mp4`);
+    let joined = false;
+    await this.queue.add(id, 'render', 'render', 'Audio del 4:5', async (signal) => {
+      joined = await addAudio(project, res.file, final, out, signal);
+    });
+    return joined ? { file: out } : { note: 'no se pudo poner el audio al formato 4:5' };
   }
 
   /** True when the assembled project does not match the music chosen in Preparación. */

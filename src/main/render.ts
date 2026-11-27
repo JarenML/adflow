@@ -211,15 +211,24 @@ export async function writeMaterialList(project: string): Promise<string> {
  * `parallel` is how many renders the queue lets run at once: with more than one, each gets an equal
  * share of the CPU threads (Remotion alone takes half of them per render, and two would fight).
  */
+/** The 4:5 for the feeds lives in the same project as the composition «Feed» (playbook template). */
+export const hasFeedComposition = (project: string) => {
+  const root = path.join(project, 'src', 'Root.tsx');
+  return fs.existsSync(root) && /id=["'`]Feed["'`]/.test(fs.readFileSync(root, 'utf8'));
+};
+
 export function renderVideo(
   project: string,
   onProgress: (pct: number) => void,
   signal?: AbortSignal,
   parallel = 1,
+  opts: { composition?: string; out?: string; muted?: boolean } = {},
 ): Promise<{ ok: boolean; file: string; error?: string }> {
-  const out = path.join(project, 'out', 'video.mp4');
+  const rel = opts.out ?? 'out/video.mp4';
+  const out = path.join(project, rel);
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  const args = ['remotion', 'render', 'src/index.ts', 'Video', 'out/video.mp4', '--scale=1.5', '--crf=19'];
+  const args = ['remotion', 'render', 'src/index.ts', opts.composition ?? 'Video', rel, '--scale=1.5', '--crf=19'];
+  if (opts.muted) args.push('--muted');
   if (parallel > 1) args.push(`--concurrency=${Math.max(1, Math.floor(os.availableParallelism() / parallel))}`);
   return new Promise((resolve) => {
     const child = startCli('npx', args, { cwd: project });
@@ -248,6 +257,16 @@ export function renderVideo(
       resolve({ ok, file: out, error: ok ? undefined : tail.trim().split('\n').slice(-25).join('\n') || `Remotion terminó con código ${code}` });
     });
   });
+}
+
+/** Puts the (already mastered) audio of one video on another: the 4:5 takes the 9:16's sound. */
+export async function addAudio(project: string, video: string, audioFrom: string, out: string, signal?: AbortSignal): Promise<boolean> {
+  const r = await runCli(
+    'npx',
+    ['remotion', 'ffmpeg', '-y', '-i', video, '-i', audioFrom, '-map', '0:v', '-map', '1:a', '-c', 'copy', '-shortest', '-movflags', '+faststart', out],
+    { cwd: project, timeoutMs: 10 * 60_000, signal },
+  );
+  return r.code === 0 && fs.existsSync(out);
 }
 
 /** Brings the mix to −14 LUFS with the playbook's tool and puts it back on the video. Needs Python. */

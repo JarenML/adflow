@@ -64,6 +64,22 @@ export function PrepStep({ episode }: { episode: EpisodeState }) {
 
       <PrepOptions value={choice} onChange={(p) => void change(p)} providers={providers} settings={settings} />
 
+      <Card className="p-5">
+        <SectionTitle title="Formatos" hint="El 9:16 siempre se renderiza. El 4:5 sale del mismo montaje, para los feeds." />
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-panel-2/40 px-4 py-3">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4 accent-[#7c5cff]"
+            checked={episode.feed45 !== false}
+            onChange={(ev) => void api.patchEpisode(episode.id, { feed45: ev.target.checked })}
+          />
+          <span>
+            <span className="block text-[13px] font-medium text-ink">También en 4:5 (1080×1350)</span>
+            <span className="block text-[12px] text-mute">Para el feed de Instagram, Facebook y LinkedIn. El 9:16 queda para Reels, Stories y TikTok. Casi duplica el tiempo de render.</span>
+          </span>
+        </label>
+      </Card>
+
       <div className={cx('flex items-center justify-between rounded-2xl border px-5 py-4', locked ? 'border-ok/30 bg-ok/5' : 'border-brand/30 bg-brand/5')}>
         <div>
           <p className="text-sm font-semibold">{locked ? 'Preparación aprobada' : 'Listo para escribir el guion'}</p>

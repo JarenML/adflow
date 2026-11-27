@@ -7,7 +7,7 @@ import https from 'node:https';
 import path from 'node:path';
 import type { Playbook, SourceEpisode, StepId, TeamProgress, TeamStatus } from '@shared/types';
 import { stepLabel } from '@shared/progress';
-import { videoContentType, type RemoteVideo } from '@shared/finalVideo';
+import { videoContentType, type RemoteVideo, type VideoFormat } from '@shared/finalVideo';
 import { getDataDir, loadSettings, writeJson } from '../store';
 import type { EpisodeSource } from './types';
 
@@ -142,21 +142,39 @@ function putFile(url: string, file: string, contentType: string, size: number, o
 }
 
 /**
- * Uploads the final video: asks the admin for a signed URL (one file, a few minutes), sends the file
- * straight to the bucket and tells the admin it is there, which records it as the current version.
+ * Uploads the final video in every format it has (9:16 and 4:5) as one version: asks the admin for a
+ * signed URL per file (one file, a few minutes), sends each straight to the bucket and tells the admin
+ * they are there, which records them together as the current version.
  */
-export async function uploadFinalVideo(episodeId: string, file: string, onProgress: (sent: number, total: number) => void): Promise<RemoteVideo> {
-  const contentType = videoContentType(file);
-  if (!contentType) throw new TeamApiError(VIDEO_ERRORS.social_video_bad_type, 400, 'social_video_bad_type');
-  const size = fs.statSync(file).size;
-  const id = remoteId(episodeId);
-  const target = await api<{ uploadUrl: string; objectKey: string; contentType: string }>(`/episodes/${id}/video/upload-url`, {
-    method: 'POST',
-    body: { size, contentType },
+export async function uploadFinalVideo(
+  episodeId: string,
+  files: { path: string; format: VideoFormat }[],
+  onProgress: (sent: number, total: number) => void,
+): Promise<RemoteVideo[]> {
+  const list = files.map((f) => {
+    const contentType = videoContentType(f.path);
+    if (!contentType) throw new TeamApiError(VIDEO_ERRORS.social_video_bad_type, 400, 'social_video_bad_type');
+    return { ...f, contentType, size: fs.statSync(f.path).size };
   });
-  onProgress(0, size);
-  await putFile(target.uploadUrl, file, target.contentType, size, (sent) => onProgress(sent, size));
-  return api<RemoteVideo>(`/episodes/${id}/video/complete`, { method: 'POST', body: { objectKey: target.objectKey, fileName: path.basename(file) } });
+  const total = list.reduce((n, f) => n + f.size, 0);
+  const id = remoteId(episodeId);
+  const target = await api<{ uploads: { format: VideoFormat; uploadUrl: string; objectKey: string; contentType: string }[] }>(`/episodes/${id}/video/upload-url`, {
+    method: 'POST',
+    body: { files: list.map((f) => ({ format: f.format, size: f.size, contentType: f.contentType })) },
+  });
+  onProgress(0, total);
+  let done = 0;
+  for (const f of list) {
+    const u = target.uploads.find((x) => x.format === f.format);
+    if (!u) throw new TeamApiError('El panel de administración no devolvió dónde subir el video.', 500);
+    await putFile(u.uploadUrl, f.path, u.contentType, f.size, (sent) => onProgress(done + sent, total));
+    done += f.size;
+  }
+  const r = await api<{ videos: RemoteVideo[] }>(`/episodes/${id}/video/complete`, {
+    method: 'POST',
+    body: { objects: list.map((f) => ({ objectKey: target.uploads.find((x) => x.format === f.format)!.objectKey, fileName: path.basename(f.path) })) },
+  });
+  return r.videos;
 }
 
 export const fetchPlaybookManifest = () => api<PlaybookManifest>('/playbook');

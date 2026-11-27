@@ -267,7 +267,7 @@ function musicBlock(m: RenderMusic): string {
   ${MUSIC_RULES}.`;
 }
 
-export function renderPrompt(material: string, music: RenderMusic = { kind: 'none' }): string {
+export function renderPrompt(material: string, music: RenderMusic = { kind: 'none' }, feed = true): string {
   return `Pasos 8 y 9 del playbook: ensamblar el video final en Remotion.
 
 Tu directorio de trabajo es el proyecto Remotion del episodio (ya instalado). La carpeta del episodio
@@ -277,7 +277,14 @@ Haz el montaje completo según escenas.json y el playbook:
 - src/Root.tsx: la composición "Video" (no cambies su id ni el script de render) con todas las
   escenas, sus duraciones (voz + retraso + 0,1–0,25 s), transiciones del mapa, puente al logo,
   <EscenaLogo /> y <EscenaFinal /> de las plantillas. Total dentro de la duración del playbook.
-- src/voz.tsx: registra las tomas de public/voz/ y en qué escena va cada una, con subtítulos.
+${
+    feed
+      ? `- El formato 4:5 para los feeds: la composición "Feed" (y feed-<id>) muestra la misma línea de
+  tiempo, como en la plantilla. Arma todo en la zona segura y revisa también feed-<id>; usa feedY o
+  useSafeTop solo donde algo importante quede cortado.
+`
+      : ''
+  }- src/voz.tsx: registra las tomas de public/voz/ y en qué escena va cada una, con subtítulos.
 - src/audio.tsx: efectos de public/sfx/ y la música.
 ${musicBlock(music)}
 - Escenas 2D: créalas en src/scenes/ reutilizando las piezas de ui.tsx, flat.tsx y los ejemplos.
@@ -324,7 +331,27 @@ ${error}
 Corrige el script (que siga escribiendo ../musica/musica.wav con la misma música). No lo ejecutes.`;
 }
 
-export function renderFixPrompt(error: string): string {
+/** The project was assembled before the 4:5 existed: add it without touching the 9:16. */
+export function feedAddPrompt(templateSrc: string): string {
+  return `Este proyecto todavía no tiene el formato 4:5 para los feeds. Agrégalo sin cambiar el video 9:16
+(composición "Video", escenas, duraciones, voces ni música):
+
+- Copia de la plantilla del playbook (${templateSrc}) lo que hace falta para el 4:5: en common.tsx,
+  Stage, feedOffset, useVisible, useSafeTop y FEED_H; en Root.tsx, FeedStage, la composición "Feed"
+  (720×900, misma línea de tiempo) y las composiciones feed-<id>. Si EscenaFinal o PuenteLogo usan
+  el alto del video, ya vienen adaptados desde la plantilla.
+- Revisa con \`npx remotion still src/index.ts feed-<id> out/check.png --frame=N\` las escenas con
+  textos cerca de los bordes; usa feedY o useSafeTop solo donde algo importante quede cortado.`;
+}
+
+export function renderFixPrompt(error: string, composition = 'Video'): string {
+  if (composition !== 'Video') {
+    return `El render de la composición "${composition}" (formato 4:5) falló con este error:
+
+${error}
+
+Corrige el proyecto para que renderice sin cambiar el contenido creativo ni el video 9:16.`;
+  }
   return `El render de Remotion falló con este error:
 
 ${error}

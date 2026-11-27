@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, CloudUpload, Copy, ExternalLink, FolderOpen, Megaphone, RotateCcw, Send, Wand2 } from 'lucide-react';
 import type { EpisodeState } from '@shared/types';
-import { uploadedAs, type FinalVideoUploads } from '@shared/finalVideo';
+import { FORMAT_LABEL, uploadedAs, versionsOf, type FinalVideoUploads } from '@shared/finalVideo';
 import { api, useLive } from '../lib/api';
 import { Button, Card, cx, Empty, Field, inputCls, SectionTitle, Select, TeamStatusPill } from '../components/ui';
 import { toTeamStatus } from '@shared/progress';
@@ -49,13 +49,12 @@ function CopyBox({ label, value, mono }: { label: string; value: string; mono?: 
 }
 
 const shortDate = (iso: string) => new Date(iso).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-const mb = (bytes: number) => `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 
 /**
  * «Subir video final»: sends the newest render to the team admin, which keeps every version. Separate
  * from approving the render. If it fails, the message shows under the button and it can be retried.
  */
-function UploadFinalVideo({ episode, video }: { episode: EpisodeState; video: { file: string; size: number } | null | undefined }) {
+function UploadFinalVideo({ episode, video, feed }: { episode: EpisodeState; video: { file: string; size: number } | null | undefined; feed: { file: string } | null | undefined }) {
   const [info, reload] = useLive<FinalVideoUploads>(() => api.finalVideoUploads(episode.id), [episode.id], episode.id);
   const [progress, setProgress] = useState<{ sent: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +70,8 @@ function UploadFinalVideo({ episode, video }: { episode: EpisodeState; video: { 
 
   if (!info?.team) return null;
   const uploading = progress !== null;
-  const latest = info.videos.find((v) => v.isCurrent) ?? info.videos[0];
+  const versions = versionsOf(info.videos);
+  const latest = versions.find((v) => v.isCurrent) ?? versions[0];
   // The same render (name and size) already went up: say so, but still allow uploading it again.
   const same = video ? uploadedAs(video, info.videos) : null;
 
@@ -81,7 +81,7 @@ function UploadFinalVideo({ episode, video }: { episode: EpisodeState; video: { 
     setProgress({ sent: 0, total: 0 });
     try {
       const v = await api.uploadFinalVideo(episode.id);
-      setDone(v.version);
+      setDone(v[0]?.version ?? null);
       reload();
     } catch (err) {
       // Electron wraps the message: «Error invoking remote method 'adflow:…': Error: <message>».
@@ -102,7 +102,7 @@ function UploadFinalVideo({ episode, video }: { episode: EpisodeState; video: { 
         disabled={!video || uploading}
         onClick={() => void upload()}
       >
-        {uploading ? `Subiendo… ${pct} %` : 'Subir video final'}
+        {uploading ? `Subiendo… ${pct} %` : feed ? 'Subir video final (9:16 + 4:5)' : 'Subir video final'}
       </Button>
       {uploading && (
         <div className="h-1.5 overflow-hidden rounded-full bg-panel-2" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
@@ -120,7 +120,7 @@ function UploadFinalVideo({ episode, video }: { episode: EpisodeState; video: { 
               : same
                 ? `Este render ya se subió como versión ${same.version}.`
                 : latest
-                  ? `Última versión subida: v${latest.version} · ${shortDate(latest.createdAt)} · ${mb(latest.size)}`
+                  ? `Última versión subida: v${latest.version} · ${latest.formats.map((f) => FORMAT_LABEL[f]).join(' + ')} · ${shortDate(latest.createdAt)}`
                   : 'Aún no se subió ningún video final de este episodio.'}
         </p>
       )}
@@ -131,6 +131,9 @@ function UploadFinalVideo({ episode, video }: { episode: EpisodeState; video: { 
 export function PublishStep({ episode }: { episode: EpisodeState }) {
   const [copy] = useLive(() => api.adCopy(episode.id), [episode.id], episode.id);
   const [video] = useLive(() => api.finalVideo(episode.id), [episode.id], episode.id);
+  const [feed] = useLive(() => api.feedVideo(episode.id), [episode.id], episode.id);
+  const [showFeed, setShowFeed] = useState(false);
+  const shown = showFeed && feed ? feed : video;
   const ad = useMemo(() => sections(copy ?? ''), [copy]);
   const st = episode.steps.publish.status;
   const pub = episode.publication;
@@ -165,9 +168,18 @@ export function PublishStep({ episode }: { episode: EpisodeState }) {
 
       <div className="grid grid-cols-[minmax(220px,300px)_minmax(0,1fr)] gap-5">
         <Card className="overflow-hidden">
-          <div className="relative aspect-[9/16] bg-[#0a0c11]">
-            {video ? (
-              <video src={video.url} className="absolute inset-0 size-full object-cover" controls />
+          {feed && (
+            <div className="flex gap-1 border-b border-line p-1.5 text-[11.5px]">
+              {[false, true].map((f) => (
+                <button key={String(f)} className={cx('no-drag flex-1 rounded-md px-2 py-1', showFeed === f ? 'bg-panel-2 font-semibold text-ink' : 'text-mute hover:text-ink')} onClick={() => setShowFeed(f)}>
+                  {f ? '4:5 · feed' : '9:16 · Reels'}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className={cx('relative bg-[#0a0c11]', showFeed && feed ? 'aspect-[4/5]' : 'aspect-[9/16]')}>
+            {shown ? (
+              <video key={shown.url} src={shown.url} className="absolute inset-0 size-full object-cover" controls />
             ) : (
               <div className="absolute inset-0 grid place-items-center p-6 text-center text-[12px] text-faint">
                 Aún no hay video final (.mp4) en la carpeta del episodio.
@@ -175,12 +187,12 @@ export function PublishStep({ episode }: { episode: EpisodeState }) {
             )}
           </div>
           <div className="flex items-center justify-between gap-2 p-3">
-            <span className="truncate text-[11.5px] text-faint">{video?.file ?? 'Sin render'}</span>
+            <span className="truncate text-[11.5px] text-faint">{shown?.file ?? 'Sin render'}</span>
             <Button size="sm" variant="ghost" icon={<FolderOpen className="size-3.5" />} onClick={() => api.openPath(episode.dir)}>
               Carpeta
             </Button>
           </div>
-          <UploadFinalVideo episode={episode} video={video} />
+          <UploadFinalVideo episode={episode} video={video} feed={feed} />
         </Card>
 
         <div className="min-w-0 space-y-5">

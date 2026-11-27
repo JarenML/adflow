@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ArrowRight, CheckCircle2, Circle, CircleAlert, Film, FolderOpen, RefreshCw, Wand2 } from 'lucide-react';
 import type { EpisodeState } from '@shared/types';
 import { api, useLive } from '../lib/api';
@@ -17,21 +18,23 @@ const CHECKLIST = [
 export function RenderStep({ episode }: { episode: EpisodeState }) {
   const [data] = useLive(
     async () => {
-      const [s, imgs, clips, lines, video, report] = await Promise.all([
+      const [s, imgs, clips, lines, video, feed, report] = await Promise.all([
         api.script(episode.id),
         api.images(episode.id),
         api.clips(episode.id),
         api.narration(episode.id),
         api.finalVideo(episode.id),
+        api.feedVideo(episode.id),
         api.renderReport(episode.id),
       ]);
-      return { scenes: s.script?.escenas.length ?? 0, imgs, clips, lines, video, report };
+      return { scenes: s.script?.escenas.length ?? 0, imgs, clips, lines, video, feed, report };
     },
     [episode.id],
     episode.id,
   );
   const st = episode.steps.render.status;
   const working = st === 'working';
+  const [showFeed, setShowFeed] = useState(false);
   const report = data?.report;
   const assets = [
     ['Escenas', data?.scenes ?? 0, data?.scenes ?? 0],
@@ -86,7 +89,31 @@ export function RenderStep({ episode }: { episode: EpisodeState }) {
             }
           />
           <div className="grid grid-cols-[320px_1fr] gap-5">
-            <video key={data.video.url} src={data.video.url} controls className="aspect-[9/16] w-full rounded-xl border border-line bg-black" />
+            <div className="space-y-2">
+              {data.feed && (
+                <div className="flex gap-1 rounded-lg border border-line bg-panel-2/40 p-1 text-[12px]">
+                  {[false, true].map((f) => (
+                    <button key={String(f)} className={cx('no-drag flex-1 rounded-md px-2 py-1', showFeed === f ? 'bg-panel-2 font-semibold text-ink' : 'text-mute hover:text-ink')} onClick={() => setShowFeed(f)}>
+                      {f ? '4:5 · feed' : '9:16 · Reels'}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {showFeed && data.feed ? (
+                <video key={data.feed.url} src={data.feed.url} controls className="aspect-[4/5] w-full rounded-xl border border-line bg-black" />
+              ) : (
+                <video key={data.video.url} src={data.video.url} controls className="aspect-[9/16] w-full rounded-xl border border-line bg-black" />
+              )}
+              {!data.feed && (
+                <p className="text-[11.5px] text-faint">
+                  {episode.feed45 === false
+                    ? 'Sin 4:5: apagado en Preparación.'
+                    : report?.feedNote
+                      ? `Sin 4:5: ${report.feedNote}.`
+                      : 'Sin 4:5 todavía. «Renderizar de nuevo» lo agrega: Claude adapta el proyecto y se renderizan los dos formatos.'}
+                </p>
+              )}
+            </div>
             <div className="space-y-2 text-[12.5px]">
               <p className="text-mute">¿Necesitas cambios? Pídelos a Claude en el chat lateral; corregirá el proyecto y volverá a renderizar.</p>
               <ul className="space-y-2">
