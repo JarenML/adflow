@@ -29,7 +29,7 @@ import {
   type Script,
 } from '@shared/schemas';
 import { BRAIN_FILE_TOOLS, onBrainUsage, runBrain, type BrainEvent } from './brain/claudeCli';
-import { addAudio, hasFeedComposition, masterAudio, mediaDuration, prepareProject, renderVideo, writeMaterialList } from './render';
+import { addAudio, cropToFeed, hasFeedComposition, hasProject, masterAudio, mediaDuration, prepareProject, renderVideo, writeMaterialList } from './render';
 import * as P from './brain/prompts';
 import { episodeSlug, serieSlug } from './playbookParse';
 import { stepContext } from './playbook';
@@ -425,6 +425,37 @@ export class Pipeline {
   /** Newest 9:16 MP4 at the top of the episode folder (where the final render goes). */
   finalVideo(id: string): { file: string; url: string; size: number } | null {
     return this.newestMp4(id, (f) => !FEED_FILE.test(f));
+  }
+
+  /** True when the episode has its own Remotion project (episodes made outside AdFlow do not). */
+  hasProject(id: string): boolean {
+    return hasProject(this.get(id).dir);
+  }
+
+  /**
+   * «Renderizar de nuevo» of an episode made outside AdFlow: cuts the final 9:16 to the window
+   * over the safe zone. The 9:16 and the step's status are not touched.
+   */
+  async cropFeed(id: string): Promise<{ file: string; sizeMB: number }> {
+    const e = this.get(id);
+    const video = this.finalVideo(id);
+    if (!video) throw new Error('Aún no hay video final (.mp4) en la carpeta del episodio.');
+    const out = path.join(e.dir, `${e.slug}-4x5.mp4`);
+    let r: Awaited<ReturnType<typeof cropToFeed>> = { ok: false, error: 'no se ejecutó' };
+    await this.queue.add(id, 'render', 'render', 'Recorte 4:5', async (signal) => {
+      this.activity(id, 'render', 'tool', 'Recorta el 9:16 a 4:5 (1080×1350)');
+      r = await cropToFeed(path.join(e.dir, video.file), out, signal);
+    });
+    if (!r.ok) {
+      this.activity(id, 'render', 'error', `No se pudo crear el 4:5: ${r.error ?? ''}`);
+      throw new Error(`No se pudo crear el 4:5: ${r.error ?? ''}`);
+    }
+    const feed = { file: path.basename(out), sizeMB: Math.round((fs.statSync(out).size / 1048576) * 10) / 10 };
+    const report = this.renderReport(id);
+    if (report) writeJson(this.renderReportFile(id), { ...report, feed, feedNote: 'recortado del 9:16' });
+    this.activity(id, 'render', 'result', `Formato 4:5 (recortado del 9:16): ${feed.file} · ${feed.sizeMB} MB`);
+    this.ev.episode(this.get(id));
+    return feed;
   }
 
   /** The 4:5 for the feeds (<slug>-4x5.mp4), when it was rendered. */
@@ -949,6 +980,17 @@ export class Pipeline {
       log(error, 'error');
       this.setStatus(id, 'render', 'error', { error: error.split(/\r?\n/)[0].slice(0, 300) });
     };
+    // An episode made outside AdFlow has no Remotion project of its own (never borrow another
+    // episode's): «Renderizar de nuevo» only cuts its 9:16 to 4:5, and a change would mean assembling
+    // it again from scratch. Its 9:16 and status stay as they are.
+    if (mode !== 'build' && !hasProject(e.dir)) {
+      if (mode === 'rerender') {
+        await this.cropFeed(id).catch(() => {});
+        return;
+      }
+      log('Este episodio se armó fuera de AdFlow y no tiene su proyecto de Remotion: para cambiarlo habría que rehacer el montaje.', 'error');
+      return;
+    }
     // An old take (the script changed after it) or a missing one never reaches the video.
     const pending = this.narration(id).filter(needsTake);
     if (pending.length) return fail(`${voiceProblem(pending)} Revisa la Voz del narrador antes de renderizar.`);

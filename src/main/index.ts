@@ -122,6 +122,8 @@ function registerIpc() {
   handle('adCopy', (id: string) => pipeline.adCopy(id));
   handle('finalVideo', (id: string) => pipeline.finalVideo(id));
   handle('feedVideo', (id: string) => pipeline.feedVideo(id));
+  handle('hasProject', (id: string) => pipeline.hasProject(id));
+  handle('cropFeed', (id: string) => pipeline.cropFeed(id));
   // «Subir video final»: only episodes of Producción de redes have somewhere to go.
   const teamEpisode = (id: string) => {
     const e = pipeline.get(id);

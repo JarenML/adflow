@@ -8,6 +8,7 @@ import { runCli, startCli } from './proc';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import { getDataDir, resolveIn } from './store';
+import { feedCrop } from '@shared/finalVideo';
 
 /** The playbook's templates live next to its master prompt (creative/social/playbook/ in robles.ai). */
 const templatesDir = (pb: Playbook) => path.dirname(resolveIn(pb, pb.masterPrompt));
@@ -211,6 +212,42 @@ export async function writeMaterialList(project: string): Promise<string> {
  * `parallel` is how many renders the queue lets run at once: with more than one, each gets an equal
  * share of the CPU threads (Remotion alone takes half of them per render, and two would fight).
  */
+/**
+ * True when the episode has its own Remotion project made from the playbook template (with the
+ * composition «Video» AdFlow renders). Episodes made outside AdFlow have none, or one of their own
+ * (e.g. «VideoA»/«VideoB»), and AdFlow never prepares or renders those: their 4:5 is a crop.
+ */
+export const hasProject = (episodeDir: string) => {
+  const dir = remotionDir(episodeDir);
+  if (!isProject(dir)) return false;
+  return /id=["'`]Video["'`]/.test(fs.readFileSync(path.join(dir, 'src', 'Root.tsx'), 'utf8'));
+};
+
+/** A folder where Remotion is installed, to borrow its ffmpeg (null: none yet, use the system's). */
+function remotionRuntime(): string | null {
+  const base = path.join(getDataDir(), 'remotion');
+  if (!fs.existsSync(base)) return null;
+  const dir = fs.readdirSync(base).map((d) => path.join(base, d)).find((d) => fs.existsSync(path.join(d, 'node_modules', 'remotion')));
+  return dir ?? null;
+}
+
+/**
+ * The 4:5 of an episode made outside AdFlow (no Remotion project to render it from): the 9:16 cut to
+ * the window over the safe zone, with its sound as it is.
+ */
+export async function cropToFeed(video: string, out: string, signal?: AbortSignal): Promise<{ ok: boolean; error?: string }> {
+  const runtime = remotionRuntime();
+  const tool = (name: 'ffmpeg' | 'ffprobe', args: string[]) =>
+    runtime ? runCli('npx', ['remotion', name, ...args], { cwd: runtime, timeoutMs: 15 * 60_000, signal }) : runCli(name, args, { timeoutMs: 15 * 60_000, signal });
+  const probe = await tool('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', video]);
+  const [width, height] = probe.stdout.trim().split(',').map(Number);
+  if (!width || !height) return { ok: false, error: 'no se pudo leer el tamaño del video (falta ffmpeg)' };
+  if (height / width < 1.5) return { ok: false, error: 'el video no es vertical 9:16' };
+  const c = feedCrop(width, height);
+  const r = await tool('ffmpeg', ['-y', '-i', video, '-vf', `crop=${c.w}:${c.h}:0:${c.y}`, '-c:v', 'libx264', '-crf', '19', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-c:a', 'copy', '-movflags', '+faststart', out]);
+  return r.code === 0 && fs.existsSync(out) ? { ok: true } : { ok: false, error: (r.stderr || r.stdout).trim().split('\n').pop()?.slice(0, 200) || 'ffmpeg falló' };
+}
+
 /** The 4:5 for the feeds lives in the same project as the composition «Feed» (playbook template). */
 export const hasFeedComposition = (project: string) => {
   const root = path.join(project, 'src', 'Root.tsx');

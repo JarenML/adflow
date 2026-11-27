@@ -18,7 +18,7 @@ const CHECKLIST = [
 export function RenderStep({ episode }: { episode: EpisodeState }) {
   const [data] = useLive(
     async () => {
-      const [s, imgs, clips, lines, video, feed, report] = await Promise.all([
+      const [s, imgs, clips, lines, video, feed, report, ownProject] = await Promise.all([
         api.script(episode.id),
         api.images(episode.id),
         api.clips(episode.id),
@@ -26,8 +26,9 @@ export function RenderStep({ episode }: { episode: EpisodeState }) {
         api.finalVideo(episode.id),
         api.feedVideo(episode.id),
         api.renderReport(episode.id),
+        api.hasProject(episode.id),
       ]);
-      return { scenes: s.script?.escenas.length ?? 0, imgs, clips, lines, video, feed, report };
+      return { scenes: s.script?.escenas.length ?? 0, imgs, clips, lines, video, feed, report, ownProject };
     },
     [episode.id],
     episode.id,
@@ -35,6 +36,19 @@ export function RenderStep({ episode }: { episode: EpisodeState }) {
   const st = episode.steps.render.status;
   const working = st === 'working';
   const [showFeed, setShowFeed] = useState(false);
+  const [cropping, setCropping] = useState(false);
+  const [cropError, setCropError] = useState<string | null>(null);
+  const crop = async () => {
+    setCropping(true);
+    setCropError(null);
+    try {
+      await api.cropFeed(episode.id);
+    } catch (err) {
+      setCropError(String((err as Error).message ?? err).replace(/^.*?Error: /, ''));
+    } finally {
+      setCropping(false);
+    }
+  };
   const report = data?.report;
   const assets = [
     ['Escenas', data?.scenes ?? 0, data?.scenes ?? 0],
@@ -79,7 +93,13 @@ export function RenderStep({ episode }: { episode: EpisodeState }) {
             hint={report ? `${report.file} · ${report.durationS?.toFixed(1) ?? '?'} s · ${report.sizeMB} MB${report.mastered ? ' · −14 LUFS' : ''}` : data.video.file}
             right={
               <div className="flex gap-2">
-                <Button size="sm" icon={<RefreshCw className="size-3.5" />} loading={working} onClick={() => api.act(episode.id, { step: 'render', type: 'rerender' })}>
+                <Button
+                  size="sm"
+                  icon={<RefreshCw className="size-3.5" />}
+                  loading={working || cropping}
+                  title={data.ownProject === false ? 'Este episodio se armó fuera de AdFlow: recorta su 9:16 para sacar el 4:5.' : undefined}
+                  onClick={() => (data.ownProject === false ? void crop() : api.act(episode.id, { step: 'render', type: 'rerender' }))}
+                >
                   Renderizar de nuevo
                 </Button>
                 <Button size="sm" variant="primary" icon={<ArrowRight className="size-3.5" />} disabled={working || st === 'approved'} onClick={() => api.act(episode.id, { step: 'render', type: 'approve' })}>
@@ -104,7 +124,17 @@ export function RenderStep({ episode }: { episode: EpisodeState }) {
               ) : (
                 <video key={data.video.url} src={data.video.url} controls className="aspect-[9/16] w-full rounded-xl border border-line bg-black" />
               )}
-              {!data.feed && (
+              {data.ownProject === false && (
+                <div className="space-y-1">
+                  {!data.feed && (
+                    <p className="text-[11.5px] leading-snug text-faint">
+                      Este episodio se armó fuera de AdFlow: «Renderizar de nuevo» saca el 4:5 recortando el 9:16 a la franja de la zona segura, sin tocar el 9:16.
+                    </p>
+                  )}
+                  {cropError && <p className="text-[11.5px] leading-snug text-bad" role="alert">No se pudo crear el 4:5: {cropError.replace(/^No se pudo crear el 4:5: /, '')}</p>}
+                </div>
+              )}
+              {!data.feed && data.ownProject !== false && (
                 <p className="text-[11.5px] text-faint">
                   {episode.feed45 === false
                     ? 'Sin 4:5: apagado en Preparación.'

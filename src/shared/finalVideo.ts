@@ -60,3 +60,11 @@ export function versionsOf(videos: RemoteVideo[]): { version: number; isCurrent:
   }
   return [...by.values()].sort((a, b) => b.version - a.version);
 }
+
+/** Pure: the 4:5 window of a 9:16 frame, the same band the template's «Feed» shows (y 185 of 1920). */
+export function feedCrop(width: number, height: number): { w: number; h: number; y: number } {
+  const even = (n: number) => Math.max(2, Math.floor(n / 2) * 2);
+  const h = Math.min(even((width * 5) / 4), even(height));
+  const y = Math.min(even((height * 185) / 1920), even(height - h));
+  return { w: even(width), h, y };
+}

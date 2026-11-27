@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { uploadedAs, versionsOf, videoContentType, type RemoteVideo } from './finalVideo';
+import { feedCrop, uploadedAs, versionsOf, videoContentType, type RemoteVideo } from './finalVideo';
 
 const v = (over: Partial<RemoteVideo>): RemoteVideo => ({ id: 1, version: 1, size: 100, fileName: 'final.mp4', isCurrent: true, uploadedBy: 'Jaren', createdAt: '2026-11-26T16:10:00Z', ...over });
 
@@ -31,5 +31,16 @@ describe('versions with formats', () => {
       { version: 2, isCurrent: true, createdAt: rows[0].createdAt, formats: ['4x5', '9x16'] },
       { version: 1, isCurrent: false, createdAt: rows[2].createdAt, formats: ['9x16'] },
     ]);
+  });
+});
+
+describe('4:5 from a 9:16', () => {
+  it('cuts the band over the safe zone, the same window the template shows', () => {
+    expect(feedCrop(1080, 1920)).toEqual({ w: 1080, h: 1350, y: 184 });
+    expect(feedCrop(720, 1280)).toEqual({ w: 720, h: 900, y: 122 });
+    // Never past the bottom edge, always even sizes.
+    const c = feedCrop(1081, 1352);
+    expect(c.y + c.h).toBeLessThanOrEqual(1352);
+    expect([c.w % 2, c.h % 2, c.y % 2]).toEqual([0, 0, 0]);
   });
 });

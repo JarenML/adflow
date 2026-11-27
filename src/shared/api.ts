@@ -121,6 +121,10 @@ export interface AdflowApi {
   finalVideo(id: string): Promise<{ file: string; url: string; size: number } | null>;
   /** The 4:5 render for the feeds, when there is one. */
   feedVideo(id: string): Promise<{ file: string; url: string; size: number } | null>;
+  /** False for episodes made outside AdFlow: no Remotion project, so no re-render. */
+  hasProject(id: string): Promise<boolean>;
+  /** «Renderizar de nuevo» of an episode made outside AdFlow: its 4:5 cut from the 9:16. */
+  cropFeed(id: string): Promise<{ file: string; sizeMB: number }>;
   /** The versions of the final video already in the team admin (Producción de redes episodes). */
   finalVideoUploads(id: string): Promise<FinalVideoUploads>;
   /** «Subir video final»: uploads the newest render (9:16 and, if there is one, 4:5) as one version; progress arrives as 'videoUpload' events. */
@@ -171,6 +175,8 @@ export const API_METHODS = [
   'adCopy',
   'finalVideo',
   'feedVideo',
+  'hasProject',
+  'cropFeed',
   'finalVideoUploads',
   'uploadFinalVideo',
   'renderReport',
