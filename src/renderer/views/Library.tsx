@@ -16,12 +16,12 @@ function businessKey(b?: string): string {
 
 const TAB_LABEL: Record<TeamStatus, string> = {
   pendiente: 'Pendientes',
-  en_produccion: 'En producción',
+  en_produccion: 'En proceso',
   terminado: 'Terminados',
   publicado: 'Publicados',
 };
 
-export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
+export function LibraryView({ onOpen, onCreate }: { onOpen: (id: string) => void; onCreate: (sourceEpisodeId: string) => void }) {
   const [items, setItems] = useState<LibraryItem[]>();
   const [loadError, setLoadError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -89,6 +89,9 @@ export function LibraryView({ onOpen }: { onOpen: (id: string) => void }) {
 
   const open = async (i: LibraryItem) => {
     setError('');
+    // A pending episode goes to Crear: its Preparación is only a draft there and nothing is saved on
+    // this computer until «Siguiente: Guion».
+    if (!i.episodeId && i.status === 'pendiente') return onCreate(i.id);
     try {
       const e = await api.createEpisode(i.id);
       reload();

@@ -1,6 +1,7 @@
 // The brain: the Claude Code installed on this computer, run headless with the person's own
-// subscription (`claude -p --output-format stream-json`). AdFlow never sees a password or key:
-// Claude Code uses whatever account it is signed in as (or a managed CLAUDE_CONFIG_DIR).
+// subscription (`claude -p --output-format stream-json`). AdFlow never asks for a password or key:
+// Claude Code uses whatever account it is signed in as (or a managed CLAUDE_CONFIG_DIR). The only
+// other use of that sign-in is reading the usage limits from Anthropic (claudeUsageApi.ts).
 import fs from 'node:fs';
 import path from 'node:path';
 import type { CostEntry, StepId } from '@shared/types';

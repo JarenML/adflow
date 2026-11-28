@@ -14,6 +14,7 @@ import type {
   PipelineAction,
   Publication,
   RenderReport,
+  Settings,
   QueueSnapshot,
   StepId,
 } from '@shared/types';
@@ -98,6 +99,14 @@ export function fileUrl(abs: string): string {
   return `adflow://file/${encodeURIComponent(pathToFileURL(abs).href)}?v=${v}`;
 }
 
+/**
+ * The Claude account an episode runs with. If the one it was created with has since been removed, the current default
+ * account is used, never silently the system session (an empty config dir).
+ */
+export function brainAccount(claude: Settings['claude'], accountId: string): Settings['claude']['accounts'][number] | undefined {
+  return claude.accounts.find((a) => a.id === accountId) ?? claude.accounts.find((a) => a.id === claude.defaultAccount);
+}
+
 function readJsonFile<T>(file: string): T | null {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8')) as T;
@@ -109,6 +118,8 @@ function readJsonFile<T>(file: string): T | null {
 export class Pipeline {
   readonly queue: WorkQueue;
   private dirs = new Map<string, string>();
+  /** Episodes being taken in their source right now («Comenzar con el guion»): true once they are ours. */
+  private claiming = new Map<string, Promise<boolean>>();
 
   constructor(private ev: PipelineEvents) {
     // Every Claude run made for an episode (steps, format fixes, clips, voices) lands in its costs.
@@ -212,15 +223,16 @@ export class Pipeline {
     return scriptReference(raw, { title: item?.title ?? '', businessType: item?.businessType, solution: item?.solution, summary: item?.summary });
   }
 
-  /** Creates (or opens) the local episode of a source episode and claims it in the source. */
+  /**
+   * Creates (or opens) the local episode of a source episode. It is not taken in the source yet: the
+   * name goes on it when its script starts (owner's decision, Nov 2026), see takeInSource.
+   */
   async createFromSource(sourceEpisodeId: string): Promise<EpisodeState> {
     const item = (await this.library()).find((i) => i.id === sourceEpisodeId);
     if (!item) throw new Error('Este episodio ya no está disponible.');
     if (item.episodeId) return this.get(item.episodeId);
     const settings = loadSettings();
     const pb = activePlaybook(settings);
-    // Take it in the source first: if someone else has it, nothing is created here.
-    await getSource(item.sourceId).claim(pb, item.id, settings.userName);
     const root = resolveIn(pb, pb.episodesRoot);
     const folder = item.folder ?? `${serieSlug(item.businessType)}/${episodeSlug(item.title)}`;
     const dir = path.join(root, folder);
@@ -257,6 +269,8 @@ export class Pipeline {
     };
     // An episode made by hand that already has its script starts at the script review.
     if (fs.existsSync(path.join(dir, 'escenas.json'))) {
+      // It starts in process, so it is taken now: if someone else has it, nothing is created here.
+      await getSource(item.sourceId).claim(pb, item.id, settings.userName);
       e.steps.prep = { status: 'approved', updatedAt: now() };
       e.steps.script = { status: 'review', updatedAt: now(), note: 'Se cargó el guion guardado del episodio. Revísalo y apruébalo para continuar.' };
       e.current = 'script';
@@ -272,8 +286,17 @@ export class Pipeline {
   // ── Actions ───────────────────────────────────────────────────────────────────────────────
 
   async act(id: string, a: PipelineAction): Promise<unknown> {
+    // «Comenzar con el guion» sends the approval and the script right after: the script waits until
+    // the episode is ours in its source.
+    if (a.step === 'script' && this.claiming.has(id) && !(await this.claiming.get(id))) return;
     switch (a.type) {
       case 'approve':
+        if (a.step === 'prep' && this.get(id).source && this.get(id).steps.prep.status !== 'approved') {
+          const taking = this.takeInSource(id);
+          this.claiming.set(id, taking);
+          const ok = await taking.finally(() => setTimeout(() => this.claiming.delete(id), 5_000));
+          if (!ok) return;
+        }
         if (a.step === 'voice') {
           const pending = this.narration(id).filter(needsTake);
           if (pending.length) return void this.setStatus(id, 'voice', 'error', { error: voiceProblem(pending) });
@@ -352,6 +375,25 @@ export class Pipeline {
           e.publication = undefined;
           e.steps.publish = { ...e.steps.publish, status: 'review', updatedAt: now() };
         });
+    }
+  }
+
+  /**
+   * Takes the episode in its source when its script starts: from here it is En proceso and carries
+   * this person's name. False (and the reason on Preparación) when someone else took it first.
+   */
+  private async takeInSource(id: string): Promise<boolean> {
+    const e = this.get(id);
+    if (!e.source) return true;
+    const settings = loadSettings();
+    try {
+      await getSource(e.source.id).claim(activePlaybook(settings), e.source.episodeId, settings.userName);
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.setStatus(id, 'prep', 'error', { error: `No se pudo tomar el episodio: ${msg}` });
+      this.activity(id, 'prep', 'error', `No se pudo tomar el episodio: ${msg}`);
+      return false;
     }
   }
 
@@ -544,7 +586,7 @@ export class Pipeline {
         const e = this.get(id);
         const caseBlock = await this.briefFor(id, step);
         const ctx = stepContext(pb, step);
-        const account = settings.claude.accounts.find((a) => a.id === e.brain.account);
+        const account = brainAccount(settings.claude, e.brain.account);
         const onEvent = (b: BrainEvent) => this.activity(id, step, b.kind, b.text);
         const run = (p: string, sessionId?: string) =>
           runBrain({
@@ -887,7 +929,7 @@ export class Pipeline {
 
     if (cfg.provider === 'elevenlabs-mcp') {
       const settings = loadSettings();
-      const account = settings.claude.accounts.find((a) => a.id === e.brain.account);
+      const account = brainAccount(settings.claude, e.brain.account);
       await Promise.all(
         clips.map((c) =>
           this.queue.add(id, 'videos', 'clip', `Clip ${c.sceneId} (MCP)`, async (signal) => {

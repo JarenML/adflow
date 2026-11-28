@@ -61,7 +61,9 @@ export function Dashboard({ onOpen, onCreate }: { onOpen: (id: string) => void; 
   const q = useQueue();
   const claudeUsage = useClaudeUsage();
   const [filter, setFilter] = useState<Filter>('all');
-  const list = episodes ?? [];
+  // A job starts with the script: an episode still in its Preparación is Pendiente and lives in the
+  // Biblioteca (Pendientes, with «Abrir»), not here.
+  const list = (episodes ?? []).filter((e) => toTeamStatus(e).status !== 'pendiente');
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: list.length, waiting: list.filter(needsYou).length };
     for (const s of TEAM_STATUSES) c[s] = list.filter((e) => toTeamStatus(e).status === s).length;
@@ -72,14 +74,14 @@ export function Dashboard({ onOpen, onCreate }: { onOpen: (id: string) => void; 
     .filter((e) => filter === 'all' || (filter === 'waiting' ? needsYou(e) : toTeamStatus(e).status === filter))
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 
-  const filters: [Filter, string][] = [['all', 'Todos'], ...TEAM_STATUSES.map((s) => [s, TEAM_STATUS_LABEL[s]] as [Filter, string])];
+  const filters: [Filter, string][] = [['all', 'Todos'], ...TEAM_STATUSES.filter((s) => s !== 'pendiente').map((s) => [s, TEAM_STATUS_LABEL[s]] as [Filter, string])];
 
   return (
     <div className="mx-auto max-w-[1180px] px-8 py-8">
       <div className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Jobs</h1>
-          <p className="mt-1 text-[13px] text-mute">Episodios en producción. Se procesan en paralelo y cada paso requiere tu aprobación.</p>
+          <p className="mt-1 text-[13px] text-mute">Episodios en proceso. Se procesan en paralelo y cada paso requiere tu aprobación.</p>
         </div>
         <Button variant="primary" icon={<Plus className="size-4" />} onClick={onCreate}>
           Crear
@@ -112,8 +114,8 @@ export function Dashboard({ onOpen, onCreate }: { onOpen: (id: string) => void; 
       {!list.length ? (
         <Empty
           icon={<Library className="size-5" />}
-          title="Aún no hay episodios en producción"
-          hint="Inicia uno desde Crear."
+          title="Aún no hay episodios en proceso"
+          hint="Un episodio aparece aquí cuando apruebas su Preparación y empieza el guion."
           action={
             <Button variant="primary" icon={<ArrowRight className="size-4" />} onClick={onCreate}>
               Ir a Crear

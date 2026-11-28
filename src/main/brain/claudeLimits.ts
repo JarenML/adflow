@@ -1,6 +1,8 @@
-// The Claude account's usage limits, as Claude Code reports them at the start of every run
-// (stream-json `rate_limit_event`: utilization of the 5-hour and 7-day windows), and an estimate of how
-// much of the 5-hour limit one USD equivalent of AdFlow's work takes.
+// The Claude account's usage limits, and an estimate of how much of the 5-hour limit one USD equivalent
+// of AdFlow's work takes. The shown limits come from Anthropic's usage endpoint (claudeUsageApi.ts, the
+// numbers claude.ai and /usage show). Claude Code also reports them at the start of every run
+// (stream-json `rate_limit_event`), but cut to whole percents: those readings drive the estimate and
+// never lower a more precise reading of the same window.
 //
 // Readings belong to the Claude account that made them (Claude Code's `oauthAccount.accountUuid` in
 // `.claude.json`), so signing Claude Code into another account never shows the previous account's
@@ -122,6 +124,32 @@ export function runEnded(usd: number | undefined): void {
 const toWindow = (w: { utilization?: unknown; resetsAt?: unknown } | undefined): LimitWindow | undefined =>
   w && typeof w.utilization === 'number' && typeof w.resetsAt === 'number' ? { pct: w.utilization * 100, resetsAt: w.resetsAt * 1000 } : undefined;
 
+/** Same window: both sources give the same reset time, give or take the endpoint's milliseconds. */
+const sameWindow = (a: LimitWindow, b: LimitWindow) => Math.abs(a.resetsAt - b.resetsAt) < 60_000;
+
+/** Usage only grows within a window, so a run's truncated reading never lowers what is shown. */
+function newer(prev: LimitWindow | undefined, next: LimitWindow | undefined): LimitWindow | undefined {
+  return prev && next && sameWindow(prev, next) && prev.pct > next.pct ? prev : next;
+}
+
+function store(acc: SignedInAccount, r: AccountReading): void {
+  saved = { accounts: { ...saved.accounts, [acc.id]: r } };
+  try {
+    if (file) fs.writeFileSync(file, JSON.stringify(saved, null, 2));
+  } catch {
+    /* keeping it in memory is enough */
+  }
+  notify(claudeUsage());
+}
+
+/** A reading from Anthropic's usage endpoint for a config dir: what the panel shows. */
+export function limitsFetched(configDir: string | undefined, fiveHour: LimitWindow, sevenDay: LimitWindow | undefined): void {
+  const acc = signedInAccount(configDir || undefined);
+  if (!acc) return;
+  const prev: AccountReading = saved.accounts[acc.id] ?? { samples: [] };
+  store(acc, { ...prev, email: acc.email, fiveHour, sevenDay: sevenDay ?? prev.sevenDay, at: new Date().toISOString() });
+}
+
 /**
  * A `rate_limit_event` from a run that has just started (so `active` already counts it), made with the
  * given config dir (undefined = Claude Code's own sign-in).
@@ -146,11 +174,11 @@ export function limitsReported(
   usdSince = 0;
   clean = active === 1;
 
-  saved = { accounts: { ...saved.accounts, [acc.id]: { email: acc.email, fiveHour, sevenDay, at: new Date().toISOString(), samples } } };
-  try {
-    if (file) fs.writeFileSync(file, JSON.stringify(saved, null, 2));
-  } catch {
-    /* keeping it in memory is enough */
-  }
-  notify(claudeUsage());
+  store(acc, {
+    email: acc.email,
+    fiveHour: newer(prev.fiveHour, fiveHour),
+    sevenDay: newer(prev.sevenDay, sevenDay),
+    at: new Date().toISOString(),
+    samples,
+  });
 }

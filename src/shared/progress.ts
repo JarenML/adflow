@@ -7,14 +7,14 @@ export const TEAM_STATUSES: TeamStatus[] = ['pendiente', 'en_produccion', 'termi
 
 export const TEAM_STATUS_LABEL: Record<TeamStatus, string> = {
   pendiente: 'Pendiente',
-  en_produccion: 'En producción',
+  en_produccion: 'En proceso',
   terminado: 'Terminado',
   publicado: 'Publicado',
 };
 
 export const TEAM_STATUS_HINT: Record<TeamStatus, string> = {
   pendiente: 'Sin iniciar',
-  en_produccion: 'En producción por el equipo',
+  en_produccion: 'En proceso por el equipo',
   terminado: 'Video final aprobado, pendiente de publicación',
   publicado: 'Publicado en redes',
 };
@@ -22,10 +22,11 @@ export const TEAM_STATUS_HINT: Record<TeamStatus, string> = {
 export function toTeamStatus(e: Pick<EpisodeState, 'steps' | 'current' | 'publication'>): TeamProgress {
   if (e.publication) return { status: 'publicado', step: 'publish', publication: e.publication };
   if (e.steps.render.status === 'approved') return { status: 'terminado', step: 'publish' };
-  // An episode that exists in AdFlow was taken by someone: it is in production from Preparación on,
-  // the same thing the admin shows as soon as it is claimed.
   const step = e.current;
   const st = e.steps[step]?.status;
+  // Preparación is for reading what the episode is about: it is still pending (though already taken by
+  // whoever opened it) until Preparación is approved and the script starts.
+  if (e.steps.prep.status !== 'approved') return { status: 'pendiente', step: 'prep', waitingForYou: st === 'review', error: st === 'error' };
   return { status: 'en_produccion', step, waitingForYou: st === 'review', error: st === 'error' };
 }
 
@@ -33,7 +34,7 @@ export function stepLabel(step?: StepId): string {
   return STEPS.find((s) => s.id === step)?.label ?? '';
 }
 
-/** "En producción · Imágenes" — the one-line status used in lists. */
+/** "En proceso · Imágenes" — the one-line status used in lists. */
 export function describeProgress(p: TeamProgress): string {
   const base = TEAM_STATUS_LABEL[p.status];
   return p.status === 'en_produccion' && p.step ? `${base} · ${stepLabel(p.step)}` : base;
@@ -54,7 +55,7 @@ export function watchSteps(status: TeamStatus, step?: StepId): EpisodeState['ste
   return Object.fromEntries(STEP_IDS.map((id, i) => [id, { status: statusOf(i) }])) as EpisodeState['steps'];
 }
 
-/** «En producción · Voz», «Terminado» — said about someone else's episode. */
+/** «En proceso · Voz», «Terminado» — said about someone else's episode. */
 export function describeWatch(status: TeamStatus, step?: StepId): string {
   if (status === 'en_produccion') return `Va en el paso ${stepLabel(step ?? 'prep')}`;
   if (status === 'terminado') return 'Ya está terminado';

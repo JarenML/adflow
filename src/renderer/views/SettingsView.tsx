@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { BookOpen, Brain, CheckCircle2, CircleAlert, CircleDashed, FolderOpen, Gauge, Info, KeyRound, Plug, Plus, RefreshCw, Stethoscope, Trash2 } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { BookOpen, CheckCircle2, ChevronDown, CircleAlert, CircleDashed, FolderOpen, Gauge, Info, KeyRound, Plug, Plus, RefreshCw, Stethoscope, Trash2, X } from 'lucide-react';
 import { MAX_RENDERS } from '@shared/types';
 import type { Capability, DiagnosticItem, PlaybookSyncStatus, ProviderInfo, Settings } from '@shared/types';
 import { api } from '../lib/api';
@@ -7,13 +8,36 @@ import { Button, Card, cx, Field, inputCls, SectionTitle, Select, Tag } from '..
 import { billingTag, planTag, providerLabel } from '../steps/PrepStep';
 import { AboutTab } from './AboutTab';
 
-type Tab = 'playbook' | 'brain' | 'providers' | 'queue' | 'diagnostics' | 'about';
+type Tab = 'playbook' | 'providers' | 'queue' | 'diagnostics' | 'about';
+const TABS: Tab[] = ['playbook', 'providers', 'queue', 'diagnostics', 'about'];
 
-const CAP_LABEL: Record<Capability, string> = { brain: 'Cerebro', image: 'Imágenes', video: 'Videos', voice: 'Voz', music: 'Música' };
+const CAP_LABEL: Record<Capability, string> = { brain: 'Agente', image: 'Imágenes', video: 'Videos', voice: 'Voz', music: 'Música' };
+
+/** What each part does in an episode, shown with the ⓘ next to it. */
+const CAP_INFO: Record<Capability, string> = {
+  brain:
+    'Es el director del episodio: escribe el guion y las escenas, redacta los prompts de imágenes, videos, voz y música, arma el proyecto de Remotion y revisa cada paso antes de pedirte aprobación. Siempre es Claude Code con tu cuenta; aquí eliges el modelo, el esfuerzo y la cuenta.',
+  image:
+    'Crea un cuadro realista por escena, en vertical, a partir de los prompts del agente. Esas imágenes son el fondo de las escenas y el primer fotograma de los clips de video.',
+  video:
+    'Convierte en clips cortos las escenas que necesitan movimiento real (el gancho y los diálogos), partiendo de la imagen de la escena. Las demás escenas se animan en Remotion, sin gastar créditos.',
+  voice:
+    'Graba la narración del guion con el tiempo de cada palabra. Con esos tiempos salen los subtítulos y cada escena dura lo que dura su frase.',
+  music:
+    'Pone la pista de fondo siguiendo la estructura del video (gancho, cambio en el «después» y cierre). AdFlow la mide y el agente cuadra los cortes y las animaciones con su ritmo.',
+};
 
 export function SettingsView() {
   // settings:<tab> in the URL hash opens that tab (used by screenshot checks).
-  const [tab, setTab] = useState<Tab>(() => (location.hash.match(/^#settings:(\w+)/)?.[1] as Tab | undefined) ?? 'playbook');
+  // The brain (Claude Code) used to have its own tab: "brain" now opens Proveedores, where it lives.
+  const [tab, setTab] = useState<Tab>(() => {
+    const h = location.hash.match(/^#settings:(\w+)/)?.[1];
+    if (h === 'brain') return 'providers';
+    return TABS.includes(h as Tab) ? (h as Tab) : 'playbook';
+  });
+  const [showAvailable, setShowAvailable] = useState(false);
+  const [showBrain, setShowBrain] = useState(false);
+  const [showAccounts, setShowAccounts] = useState(false);
   const [s, setS] = useState<Settings>();
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [secrets, setSecrets] = useState<Record<string, boolean>>({});
@@ -66,7 +90,6 @@ export function SettingsView() {
 
   const tabs: [Tab, string, typeof BookOpen][] = [
     ['playbook', 'Playbook', BookOpen],
-    ['brain', 'Cerebro y cuentas', Brain],
     ['providers', 'Proveedores', Plug],
     ['queue', 'Cola y lotes', Gauge],
     ['diagnostics', 'Diagnóstico', Stethoscope],
@@ -225,66 +248,6 @@ export function SettingsView() {
           </>
         )}
 
-        {tab === 'brain' && (
-          <Card className="p-5">
-            <SectionTitle title="Claude Code" hint="AdFlow usa Claude Code instalado en esta computadora con tu suscripción. AdFlow no tiene acceso a tus credenciales." />
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Modelo por defecto">
-                <Select value={s.claude.model} onChange={(v) => save({ ...s, claude: { ...s.claude, model: v } })} options={[{ value: 'opus', label: 'Opus' }, { value: 'sonnet', label: 'Sonnet' }]} />
-              </Field>
-              <Field label="Esfuerzo">
-                <Select
-                  value={s.claude.effort}
-                  onChange={(v) => save({ ...s, claude: { ...s.claude, effort: v as Settings['claude']['effort'] } })}
-                  options={[{ value: 'low', label: 'Bajo' }, { value: 'medium', label: 'Medio' }, { value: 'high', label: 'Alto' }]}
-                />
-              </Field>
-            </div>
-            <div className="mt-6">
-              <p className="mb-2 text-[12px] font-medium text-mute">Cuentas</p>
-              <div className="space-y-2">
-                {s.claude.accounts.map((a) => (
-                  <div key={a.id} className="grid grid-cols-[1fr_1.4fr_auto_auto] items-center gap-3 rounded-xl border border-line bg-panel-2/30 px-3 py-2.5">
-                    <input className={inputCls} value={a.label} onChange={(e) => save({ ...s, claude: { ...s.claude, accounts: s.claude.accounts.map((x) => (x.id === a.id ? { ...x, label: e.target.value } : x)) } })} />
-                    <input
-                      className={cx(inputCls, 'font-mono text-[12px]')}
-                      placeholder="Sesión del sistema"
-                      value={a.configDir ?? ''}
-                      disabled={a.id === 'system'}
-                      onChange={(e) => save({ ...s, claude: { ...s.claude, accounts: s.claude.accounts.map((x) => (x.id === a.id ? { ...x, configDir: e.target.value } : x)) } })}
-                    />
-                    {s.claude.defaultAccount === a.id ? (
-                      <Tag tone="ok">Por defecto</Tag>
-                    ) : (
-                      <Button size="sm" onClick={() => save({ ...s, claude: { ...s.claude, defaultAccount: a.id } })}>
-                        Por defecto
-                      </Button>
-                    )}
-                    {a.id !== 'system' ? (
-                      <button className="no-drag text-faint hover:text-bad" onClick={() => save({ ...s, claude: { ...s.claude, accounts: s.claude.accounts.filter((x) => x.id !== a.id) } })} aria-label="Quitar">
-                        <Trash2 className="size-4" />
-                      </button>
-                    ) : (
-                      <span className="w-4" />
-                    )}
-                  </div>
-                ))}
-              </div>
-              <Button
-                className="mt-3"
-                size="sm"
-                icon={<Plus className="size-3.5" />}
-                onClick={() => save({ ...s, claude: { ...s.claude, accounts: [...s.claude.accounts, { id: `acc-${Date.now()}`, label: `Claude ${s.claude.accounts.length + 1}`, configDir: '' }] } })}
-              >
-                Agregar cuenta
-              </Button>
-              <p className="mt-3 text-[11.5px] leading-relaxed text-faint">
-                Cada cuenta adicional usa su propia carpeta de configuración de Claude Code (CLAUDE_CONFIG_DIR). Para iniciar sesión, define esa variable en una terminal y ejecuta <span className="font-mono">claude</span> una vez.
-              </p>
-            </div>
-          </Card>
-        )}
-
         {tab === 'providers' && (
           <>
             <Card className="p-5">
@@ -300,35 +263,109 @@ export function SettingsView() {
               />
               <div className="space-y-2">
                 {(Object.keys(CAP_LABEL) as Capability[]).map((cap) => (
-                  <div key={cap} className="grid grid-cols-[140px_1fr] items-center gap-4">
-                    <span className="text-[13px] font-medium">{CAP_LABEL[cap]}</span>
-                    <Select
-                      value={s.defaults[cap]}
-                      onChange={(v) => save({ ...s, defaults: { ...s.defaults, [cap]: v } })}
-                      options={providers.filter((p) => p.capability === cap).map((p) => ({ value: p.id, label: providerLabel(p), disabled: !p.implemented }))}
-                    />
+                  <div key={cap} className="grid grid-cols-[140px_1fr] items-start gap-4">
+                    <div className="flex items-center gap-1.5 pt-2">
+                      <span className="group relative no-drag">
+                        <Info className="size-3.5 cursor-help text-faint group-hover:text-ink" aria-label={`Para qué sirve: ${CAP_LABEL[cap]}`} tabIndex={0} />
+                        <span
+                          role="tooltip"
+                          className="pointer-events-none invisible absolute top-full left-0 z-50 mt-2 w-72 rounded-lg border border-line-2 bg-[#0a0c11] px-3 py-2 text-[11.5px] font-normal leading-relaxed text-mute opacity-0 shadow-xl transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+                        >
+                          {CAP_INFO[cap]}
+                          {(() => {
+                            const current = providers.find((p) => p.id === s.defaults[cap]);
+                            return current ? (
+                              <span className="mt-1.5 block text-faint">
+                                <span className="font-medium text-mute">{current.name}:</span> {current.description}
+                              </span>
+                            ) : null;
+                          })()}
+                        </span>
+                      </span>
+                      <span className="text-[13px] font-medium">{CAP_LABEL[cap]}</span>
+                    </div>
+                    <div>
+                      <div className="flex items-stretch gap-2">
+                        <div className="min-w-0 flex-1">
+                          <Select
+                            value={s.defaults[cap]}
+                            onChange={(v) => save({ ...s, defaults: { ...s.defaults, [cap]: v } })}
+                            options={providers.filter((p) => p.capability === cap).map((p) => ({ value: p.id, label: providerLabel(p), disabled: !p.implemented }))}
+                          />
+                        </div>
+                        {cap === 'brain' && (
+                          <button
+                            className="no-drag grid w-10 shrink-0 place-items-center rounded-lg border border-line-2 bg-[#0a0c11] text-mute hover:text-ink"
+                            onClick={() => setShowBrain((x) => !x)}
+                            aria-expanded={showBrain}
+                            aria-label={showBrain ? 'Ocultar opciones del agente' : 'Mostrar opciones del agente'}
+                            title="Modelo, esfuerzo y cuenta"
+                          >
+                            <ChevronDown className={cx('size-4 transition-transform', showBrain && 'rotate-180')} />
+                          </button>
+                        )}
+                      </div>
+                      {cap === 'brain' && showBrain && (
+                        // The brain is Claude Code: its model, effort and account sit right under it.
+                        <div className="mt-2 grid grid-cols-[1fr_1fr_1.4fr] items-end gap-3 rounded-xl border border-line bg-panel-2/30 px-3 py-2.5">
+                          <Field label="Modelo">
+                            <Select value={s.claude.model} onChange={(v) => save({ ...s, claude: { ...s.claude, model: v } })} options={[{ value: 'opus', label: 'Opus' }, { value: 'sonnet', label: 'Sonnet' }]} />
+                          </Field>
+                          <Field label="Esfuerzo">
+                            <Select
+                              value={s.claude.effort}
+                              onChange={(v) => save({ ...s, claude: { ...s.claude, effort: v as Settings['claude']['effort'] } })}
+                              options={[{ value: 'low', label: 'Bajo' }, { value: 'medium', label: 'Medio' }, { value: 'high', label: 'Alto' }]}
+                            />
+                          </Field>
+                          <Field label="Cuenta">
+                            <div className="flex items-center gap-2">
+                              <div className="min-w-0 flex-1">
+                                <Select
+                                  value={s.claude.defaultAccount}
+                                  onChange={(v) => save({ ...s, claude: { ...s.claude, defaultAccount: v } })}
+                                  options={s.claude.accounts.map((a) => ({ value: a.id, label: a.label }))}
+                                />
+                              </div>
+                              <Button size="sm" variant="ghost" onClick={() => setShowAccounts(true)}>
+                                Gestionar
+                              </Button>
+                            </div>
+                          </Field>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
+              <p className="mt-3 text-[11.5px] leading-relaxed text-faint">AdFlow usa Claude Code instalado en esta computadora con tu suscripción. Para mostrar tu uso, consulta a Anthropic con la sesión que Claude Code ya guardó; no la copia ni la envía a otro lugar.</p>
             </Card>
             <Card className="p-5">
-              <SectionTitle title="Proveedores disponibles" hint="Ningún proveedor consume créditos sin tu confirmación." />
-              <div className="grid grid-cols-2 gap-2">
-                {providers.map((p) => (
-                  <div key={p.id} className="rounded-xl border border-line bg-panel-2/30 px-3.5 py-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[13px] font-semibold">{p.name}</p>
-                      <div className="flex gap-1">
-                        <Tag>{CAP_LABEL[p.capability]}</Tag>
-                        {planTag(p)}
-                        {billingTag(p, s.allowPaidProviders)}
+              <button className="no-drag flex w-full items-center justify-between gap-3 text-left" onClick={() => setShowAvailable((x) => !x)} aria-expanded={showAvailable}>
+                <div>
+                  <p className="text-[14px] font-semibold">Proveedores disponibles</p>
+                  <p className="mt-0.5 text-[12px] text-faint">{providers.length} proveedores. Ningún proveedor consume créditos sin tu confirmación.</p>
+                </div>
+                <ChevronDown className={cx('size-4 shrink-0 text-mute transition-transform', showAvailable && 'rotate-180')} />
+              </button>
+              {showAvailable && (
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  {providers.map((p) => (
+                    <div key={p.id} className="rounded-xl border border-line bg-panel-2/30 px-3.5 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[13px] font-semibold">{p.name}</p>
+                        <div className="flex gap-1">
+                          <Tag>{CAP_LABEL[p.capability]}</Tag>
+                          {planTag(p)}
+                          {billingTag(p, s.allowPaidProviders)}
+                        </div>
                       </div>
+                      <p className="mt-1 text-[11.5px] text-faint">{p.description}</p>
+                      {!p.implemented && <p className="mt-1.5 text-[11px] text-mute">Próximamente</p>}
                     </div>
-                    <p className="mt-1 text-[11.5px] text-faint">{p.description}</p>
-                    {!p.implemented && <p className="mt-1.5 text-[11px] text-mute">Próximamente</p>}
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </Card>
             <Card className="p-5">
               <SectionTitle title="Claves de API" hint="Se almacenan cifradas con el almacén de credenciales del sistema." />
@@ -338,6 +375,7 @@ export function SettingsView() {
                 ))}
               </div>
             </Card>
+            {showAccounts && <AccountsModal s={s} save={save} onClose={() => setShowAccounts(false)} />}
           </>
         )}
 
@@ -428,6 +466,65 @@ export function SettingsView() {
       </div>
       </div>
     </div>
+  );
+}
+
+/** Adding, renaming and removing Claude accounts: rarely touched, so it lives behind "Gestionar". */
+function AccountsModal({ s, save, onClose }: { s: Settings; save: (next: Settings) => Promise<void>; onClose: () => void }) {
+  const setAccounts = (accounts: Settings['claude']['accounts']) => save({ ...s, claude: { ...s.claude, accounts } });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return createPortal(
+    <div className="no-drag fixed inset-0 z-50 grid place-items-center bg-black/70 p-8 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-[720px] rounded-2xl border border-line-2 bg-panel p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[15px] font-semibold">Cuentas de Claude</p>
+            <p className="mt-0.5 text-[12px] text-faint">La cuenta por defecto se elige en Proveedores → Agente.</p>
+          </div>
+          <button className="text-faint hover:text-ink" onClick={onClose} aria-label="Cerrar">
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="space-y-2">
+          {s.claude.accounts.map((a) => (
+            <div key={a.id} className="grid grid-cols-[1fr_1.4fr_auto] items-center gap-3 rounded-xl border border-line bg-panel-2/30 px-3 py-2.5">
+              <input className={inputCls} value={a.label} onChange={(e) => setAccounts(s.claude.accounts.map((x) => (x.id === a.id ? { ...x, label: e.target.value } : x)))} />
+              <input
+                className={cx(inputCls, 'font-mono text-[12px]')}
+                placeholder={a.id === 'system' ? 'Sesión del sistema' : 'C:\\Users\\tu-usuario\\.claude-work'}
+                value={a.configDir ?? ''}
+                disabled={a.id === 'system'}
+                onChange={(e) => setAccounts(s.claude.accounts.map((x) => (x.id === a.id ? { ...x, configDir: e.target.value } : x)))}
+              />
+              {/* The default account can't be removed: pick another one first. */}
+              {a.id !== s.claude.defaultAccount ? (
+                <button className="text-faint hover:text-bad" onClick={() => setAccounts(s.claude.accounts.filter((x) => x.id !== a.id))} aria-label="Quitar">
+                  <Trash2 className="size-4" />
+                </button>
+              ) : (
+                <span className="w-4" />
+              )}
+            </div>
+          ))}
+        </div>
+        <Button
+          className="mt-3"
+          size="sm"
+          icon={<Plus className="size-3.5" />}
+          onClick={() => setAccounts([...s.claude.accounts, { id: `acc-${Date.now()}`, label: `Claude ${s.claude.accounts.length + 1}`, configDir: '' }])}
+        >
+          Agregar cuenta
+        </Button>
+        <p className="mt-3 text-[11.5px] leading-relaxed text-faint">
+          Cada cuenta usa su propia carpeta de configuración de Claude Code (CLAUDE_CONFIG_DIR). Para iniciar sesión, define esa variable en una terminal y ejecuta <span className="font-mono">claude</span> una vez. «Claude del sistema» usa la sesión que tenga <span className="font-mono">claude</span> sin esa variable; puedes quitarla si eliges otra cuenta por defecto.
+        </p>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

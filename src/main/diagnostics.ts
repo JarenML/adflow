@@ -27,7 +27,7 @@ export async function runDiagnostics(settings: Settings): Promise<DiagnosticItem
   return [
     {
       id: 'claude',
-      label: 'Claude Code (cerebro)',
+      label: 'Claude Code (agente)',
       ok: claude.ok,
       detail: claude.ok ? `${claude.out} · usa la sesión iniciada en esta computadora` : 'Instala Claude Code e inicia sesión con tu cuenta.',
       required: true,

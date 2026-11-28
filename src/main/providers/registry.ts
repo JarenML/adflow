@@ -18,7 +18,7 @@ export const PROVIDERS: ProviderInfo[] = [
   {
     id: 'codex-cli',
     capability: 'image',
-    name: 'Codex (generador de imágenes)',
+    name: 'Codex',
     description: 'Usa `codex exec` con la herramienta de imágenes de la cuenta de Codex de esta computadora.',
     billing: 'subscription',
     implemented: true,

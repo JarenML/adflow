@@ -2,6 +2,8 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { Readable } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 import type { AdflowApi } from '@shared/api';
 import { checkScript } from '@shared/playbookConfig';
 import { runDiagnostics } from './diagnostics';
@@ -15,14 +17,52 @@ import { getSecrets, secretStatus, setSecret } from './secrets';
 import { activePlaybook, episodesDir, getDataDir, initStore, loadSettings, saveSettings } from './store';
 import { syncTeamPlaybook, teamPlaybookStatus } from './teamPlaybook';
 import { checkForUpdates, downloadUpdate, restartToUpdate, setAutoUpdate, startAutoUpdates, updateState } from './updater';
-import { claudeUsage, initClaudeLimits, needsReading, setRefreshing, showAccount, signedInAccount } from './brain/claudeLimits';
+import { claudeUsage, initClaudeLimits, limitsFetched, needsReading, setRefreshing, showAccount, signedInAccount } from './brain/claudeLimits';
 import { probeClaudeLimits } from './brain/claudeCli';
+import { fetchClaudeUsage } from './brain/claudeUsageApi';
 // Where updates are published (electron-builder's publish config), to link to its releases page.
 import { build as pkgBuild } from '../../package.json';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'adflow', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
 ]);
+
+const MIME: Record<string, string> = {
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml',
+  '.json': 'application/json', '.md': 'text/markdown; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
+};
+
+/**
+ * A local file with Range support: net.fetch(file://) ignores the Range header and always answers 200,
+ * and without 206 answers Chromium cannot seek in a <video> or <audio> (the timeline does nothing).
+ */
+function serveFile(file: string, range: string | null): Response {
+  let size: number;
+  try {
+    const st = fs.statSync(file);
+    if (!st.isFile()) return new Response('Not found', { status: 404 });
+    size = st.size;
+  } catch {
+    return new Response('Not found', { status: 404 });
+  }
+  const type = MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream';
+  const body = (start: number, end: number) => Readable.toWeb(fs.createReadStream(file, { start, end })) as ReadableStream;
+  const m = range ? /^bytes=(\d*)-(\d*)$/.exec(range.trim()) : null;
+  if (!m || (!m[1] && !m[2])) {
+    return new Response(size ? body(0, size - 1) : null, { status: 200, headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes' } });
+  }
+  let start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+  let end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+  if (start >= size || start > end) {
+    return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
+  }
+  return new Response(body(start, end), {
+    status: 206,
+    headers: { 'Content-Type': type, 'Content-Length': String(end - start + 1), 'Content-Range': `bytes ${start}-${end}/${size}`, 'Accept-Ranges': 'bytes' },
+  });
+}
 
 let win: BrowserWindow | null = null;
 let pipeline: Pipeline;
@@ -216,15 +256,24 @@ function defaultClaudeDir(): string | undefined {
 }
 
 let refreshingUsage: Promise<ReturnType<typeof claudeUsage>> | null = null;
+/**
+ * Reads the default account's limits from Anthropic (no usage spent). If Claude Code's sign-in has
+ * expired, a minimal Claude request renews it (and reports the limits itself), then it is read again.
+ */
 function refreshClaudeUsage() {
   refreshingUsage ??= (async () => {
     const configDir = defaultClaudeDir();
     showAccount(configDir);
     setRefreshing(true);
     try {
-      const cwd = path.join(app.getPath('userData'), 'claude-probe');
-      fs.mkdirSync(cwd, { recursive: true });
-      await probeClaudeLimits(cwd, configDir);
+      let r = await fetchClaudeUsage(configDir);
+      if (!r.ok) {
+        const cwd = path.join(app.getPath('userData'), 'claude-probe');
+        fs.mkdirSync(cwd, { recursive: true });
+        await probeClaudeLimits(cwd, configDir);
+        r = await fetchClaudeUsage(configDir);
+      }
+      if (r.ok) limitsFetched(configDir, r.fiveHour, r.sevenDay);
     } finally {
       setRefreshing(false);
       refreshingUsage = null;
@@ -234,13 +283,21 @@ function refreshClaudeUsage() {
   return refreshingUsage;
 }
 
+/** The same reading, quietly and only from Anthropic: never a Claude request, so it never spends usage. */
+async function pollClaudeUsage() {
+  if (refreshingUsage) return;
+  const configDir = defaultClaudeDir();
+  const r = await fetchClaudeUsage(configDir);
+  if (r.ok) limitsFetched(configDir, r.fiveHour, r.sevenDay);
+}
+
 /**
- * The limits only arrive with a Claude request, so when Claude Code is signed into another account (or
- * the default account changes) the panel would keep the previous one's numbers. Every 30 s: follow the
- * default account, and read an account once if it has never been read.
+ * Every 30 s: follow the default account (Claude Code may be signed into another one, or the default
+ * may change), read an account once if it has never been read, and every minute read the limits again.
  */
 function watchClaudeAccount() {
   let last: string | undefined;
+  let ticks = 0;
   const tried = new Set<string>();
   const tick = () => {
     const configDir = defaultClaudeDir();
@@ -254,6 +311,8 @@ function watchClaudeAccount() {
     if (unread && !tried.has(unread.id)) {
       tried.add(unread.id);
       void refreshClaudeUsage().catch(() => {});
+    } else if (ticks++ % 2 === 0) {
+      void pollClaudeUsage().catch(() => {});
     }
   };
   tick();
@@ -273,6 +332,7 @@ void app.whenReady().then(() => {
     const url = new URL(req.url);
     if (url.hostname !== 'file') return new Response('Not found', { status: 404 });
     const target = decodeURIComponent(url.pathname.slice(1));
+    if (target.startsWith('file:')) return serveFile(fileURLToPath(target), req.headers.get('range'));
     return net.fetch(target, { headers: req.headers });
   });
 

@@ -115,6 +115,33 @@ describe('Claude usage limits', () => {
     expect(L.claudeUsage().samples).toBe(1);
   });
 
+  it("shows Anthropic's reading and keeps the learned estimate", () => {
+    run(10, 2);
+    run(14, 1);
+    run(16, 3);
+    run(22, 0);
+    L.limitsFetched(accA, { pct: 23, resetsAt: RESET * 1000 + 129 }, { pct: 58, resetsAt: (RESET + 86_400) * 1000 });
+    const u = L.claudeUsage();
+    expect(u.fiveHour?.pct).toBe(23);
+    expect(u.sevenDay?.pct).toBe(58);
+    expect(u.samples).toBe(3);
+  });
+
+  it("never lowers Anthropic's reading with a run's truncated one in the same window", () => {
+    L.limitsFetched(accA, { pct: 13, resetsAt: RESET * 1000 + 129 }, { pct: 31, resetsAt: (RESET + 86_400) * 1000 });
+    run(12, 0); // the run reports 12 % (and 30 % for the week): cut, not lower usage
+    expect(L.claudeUsage().fiveHour?.pct).toBe(13);
+    expect(L.claudeUsage().sevenDay?.pct).toBe(31);
+    run(15, 0); // higher: newer than what was shown
+    expect(L.claudeUsage().fiveHour?.pct).toBe(15);
+  });
+
+  it('takes a run reading from a new window even if it is lower', () => {
+    L.limitsFetched(accA, { pct: 80, resetsAt: RESET * 1000 }, undefined);
+    run(3, 0, RESET + 18_000);
+    expect(L.claudeUsage().fiveHour?.pct).toBe(3);
+  });
+
   it('drops a file saved before readings were per account', () => {
     fs.writeFileSync(path.join(dir, 'claude-usage.json'), JSON.stringify({ fiveHour: { pct: 30, resetsAt: RESET * 1000 }, samples: [] }));
     L.initClaudeLimits(dir, () => {});

@@ -164,7 +164,7 @@ const TEAM_STYLE: Record<TeamStatus, string> = {
   publicado: 'text-ok bg-ok/10 border-ok/30',
 };
 
-/** One of the four team statuses, optionally with the step ("En producción · Imágenes"). */
+/** One of the four team statuses, optionally with the step ("En proceso · Imágenes"). */
 export function TeamStatusPill({ progress, status, extra }: { progress?: TeamProgress; status?: TeamStatus; extra?: string }) {
   const s = progress?.status ?? status ?? 'pendiente';
   const label = progress ? describeProgress(progress) : TEAM_STATUS_LABEL[s];

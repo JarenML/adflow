@@ -78,7 +78,7 @@ function Bar({ label, w, sub, hint }: { label: string; w: LimitWindow; sub: stri
   );
 }
 
-/** The default account's 5-hour and weekly limits, as Claude Code last reported them. */
+/** The default account's 5-hour and weekly limits, as Anthropic last reported them. */
 export function LimitBars({ usage }: { usage?: ClaudeUsage }) {
   if (!usage?.fiveHour && !usage?.refreshing) return null;
   const { fiveHour, sevenDay, refreshing } = usage;
@@ -93,7 +93,7 @@ export function LimitBars({ usage }: { usage?: ClaudeUsage }) {
           onClick={() => void api.refreshClaudeUsage()}
           disabled={refreshing}
           className="no-drag flex shrink-0 items-center gap-1 rounded px-1 transition-colors hover:text-ink disabled:cursor-default disabled:hover:text-faint"
-          title="Consultar ahora el uso de esta cuenta (hace una solicitud mínima a Claude)"
+          title="Consultar ahora el uso de esta cuenta en Anthropic (no consume uso)"
         >
           <RefreshCw className={cx('size-3', refreshing && 'animate-spin')} />
           {refreshing ? 'Consultando' : usage.at ? clock(Date.parse(usage.at)) : ''}
@@ -104,7 +104,7 @@ export function LimitBars({ usage }: { usage?: ClaudeUsage }) {
           label="Claude · 5 h"
           w={expired ? { ...fiveHour, pct: 0 } : fiveHour}
           sub={expired ? 'Restablecido' : `Se restablece a las ${clock(fiveHour.resetsAt)}`}
-          hint="Uso del límite de 5 horas de tu cuenta de Claude, incluido el uso fuera de AdFlow. Se actualiza con cada solicitud de AdFlow o con el botón de actualizar."
+          hint="Uso del límite de 5 horas de tu cuenta de Claude, incluido el uso fuera de AdFlow. Es el mismo dato que muestran claude.ai y /usage; se actualiza cada minuto."
         />
       )}
       {sevenDay && (

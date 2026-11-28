@@ -10,13 +10,14 @@ function ep(statuses: Partial<Record<StepId, StepStatus>>, current: StepId, publ
 
 describe('toTeamStatus', () => {
   it('maps the pipeline to the four team statuses', () => {
-    // Taken = in production, starting at Preparación (same as the admin after the claim).
+    // Taken but still at Preparación: pending, until Preparación is approved.
     const justTaken = toTeamStatus(ep({ prep: 'review' }, 'prep'));
-    expect(justTaken).toMatchObject({ status: 'en_produccion', step: 'prep', waitingForYou: true });
-    expect(describeProgress(justTaken)).toBe('En producción · Preparación');
+    expect(justTaken).toMatchObject({ status: 'pendiente', step: 'prep', waitingForYou: true });
+    expect(describeProgress(justTaken)).toBe('Pendiente');
+    expect(toTeamStatus(ep({ prep: 'approved', script: 'working' }, 'script'))).toMatchObject({ status: 'en_produccion', step: 'script' });
     const working = toTeamStatus(ep({ prep: 'approved', script: 'approved', images: 'review' }, 'images'));
     expect(working).toMatchObject({ status: 'en_produccion', step: 'images', waitingForYou: true });
-    expect(describeProgress(working)).toBe('En producción · Imágenes');
+    expect(describeProgress(working)).toBe('En proceso · Imágenes');
     expect(toTeamStatus(ep({ prep: 'approved', voice: 'error' }, 'voice')).error).toBe(true);
     expect(toTeamStatus(ep({ prep: 'approved', render: 'approved' }, 'publish')).status).toBe('terminado');
     expect(toTeamStatus(ep({ prep: 'approved', render: 'approved' }, 'publish', { network: 'Meta', date: '2026-11-22' })).status).toBe('publicado');

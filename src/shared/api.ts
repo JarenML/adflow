@@ -49,9 +49,9 @@ export interface ClaudeUsage {
   account?: string;
   fiveHour?: LimitWindow;
   sevenDay?: LimitWindow;
-  /** When Claude Code last reported them. */
+  /** When they were last read (from Anthropic, or from a Claude Code run). */
   at?: string;
-  /** A short Claude request is under way to read them now. */
+  /** They are being read now. */
   refreshing?: boolean;
   /** Learned from AdFlow's own runs: % of the 5-hour limit per USD equivalent (null until there is enough data). */
   pctPerUsd: number | null;
@@ -145,7 +145,7 @@ export interface AdflowApi {
   downloadUpdate(): Promise<UpdateState>;
   /** The Claude account's usage limits, as last reported by Claude Code. */
   claudeUsage(): Promise<ClaudeUsage>;
-  /** Reads the limits now with a minimal Claude request (they otherwise update only when AdFlow uses Claude). */
+  /** Reads the limits now from Anthropic (no usage spent); a minimal Claude request only if the sign-in must be renewed. */
   refreshClaudeUsage(): Promise<ClaudeUsage>;
 
   on(channel: 'episode', cb: (e: EpisodeState) => void): () => void;

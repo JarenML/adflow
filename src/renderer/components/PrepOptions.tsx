@@ -5,7 +5,7 @@ import type { Capability, ProviderInfo, Settings } from '@shared/types';
 import { Card, SectionTitle, Select, Tag } from './ui';
 
 export const CAPS: { id: Capability; label: string; icon: typeof Brain; hint: string }[] = [
-  { id: 'brain', label: 'Cerebro', icon: Brain, hint: 'Escribe el guion, los prompts y revisa cada paso' },
+  { id: 'brain', label: 'Agente', icon: Brain, hint: 'Escribe el guion, los prompts y revisa cada paso' },
   { id: 'image', label: 'Imágenes', icon: ImageIcon, hint: 'Un cuadro realista por escena' },
   { id: 'video', label: 'Videos', icon: Clapperboard, hint: 'Clips del gancho y los diálogos' },
   { id: 'voice', label: 'Voz del narrador', icon: Mic, hint: 'Narración con tiempos por palabra' },

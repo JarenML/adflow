@@ -121,7 +121,7 @@ export default function App() {
             <div className="drag h-10" />
             {route.view === 'create' && <CreateView key={route.pick ?? ''} initialPick={route.pick} onOpen={open} onLibrary={() => setRoute({ view: 'library' })} onSettings={() => setRoute({ view: 'settings' })} />}
             {route.view === 'jobs' && <Dashboard onOpen={(id) => open(id)} onCreate={() => setRoute({ view: 'create' })} />}
-            {route.view === 'library' && <LibraryView onOpen={(id) => open(id)} />}
+            {route.view === 'library' && <LibraryView onOpen={(id) => open(id)} onCreate={(pick) => setRoute({ view: 'create', pick })} />}
             {route.view === 'settings' && <SettingsView />}
           </div>
         )}
