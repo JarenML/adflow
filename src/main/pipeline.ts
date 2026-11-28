@@ -40,7 +40,9 @@ import { adReference, scriptReference } from '@shared/brief';
 import { generateWithCodex } from './providers/codexImage';
 import { provider, SECRET_LABELS } from './providers/registry';
 import { elevenClip, elevenMusic, elevenUsedCredits } from './providers/elevenlabs';
-import { audioMusicFile, buildMusicPlan, MUSIC_CLAUDE, MUSIC_ELEVENLABS, MUSIC_FILE, MUSIC_TIMES_FILE, musicCredits, musicPlanKey, parseMusicTimes } from '@shared/music';
+import { audioMusicFile, buildMusicPlan, MUSIC_CLAUDE, MUSIC_ELEVENLABS, MUSIC_FILE, MUSIC_TIMES_FILE, musicAnchors, musicCredits, musicPlanKey, parseMusicTimes } from '@shared/music';
+import { beatsByScene, cutsToAlign, describeAnalysis } from '@shared/musicAnalysis';
+import { analyzedAlready, analyzeMusic } from './musicAnalyze';
 import { runCli } from './proc';
 import { DEFAULT_HEYGEN_CREDIT_LIMIT, DEFAULT_VOICE_CREDIT_LIMIT, heygenMaxCredits, lineCredits, planHeygenRun, planVoiceRun } from '@shared/voiceCredits';
 import { downloadClip, mcpClip } from './providers/elevenlabsMcp';
@@ -1037,6 +1039,10 @@ export class Pipeline {
     const musicProblem = await this.ensureMusic(id, project, (fix) => brain(P.musicFixPrompt(fix)));
     if (musicProblem) return fail(musicProblem);
 
+    // 2d. AdFlow «listens» to a new track and Claude lines the cuts up with its beat (once per track).
+    await this.alignToMusic(id, project, (p) => brain(p));
+    if (this.get(id).steps.render.status === 'error') return;
+
     // 3. Render; one fix by Claude if it fails.
     const render = async () => {
       let res: Awaited<ReturnType<typeof renderVideo>> = { ok: false, file: '', error: 'No se ejecutó el render.' };
@@ -1137,6 +1143,43 @@ export class Pipeline {
     return joined ? { file: out } : { note: 'no se pudo poner el audio al formato 4:5' };
   }
 
+  /**
+   * Measures the episode's track against the timeline (tempo, beats, drop) and asks Claude to put the
+   * whole picture on its beat: the cuts and, inside each scene, camera moves, page-demo clicks and
+   * zooms, pop-ins and 2D transitions. Only for a track not measured yet, so a re-render with the same
+   * music does not ask again. Never blocks the render.
+   */
+  private async alignToMusic(id: string, project: string, brain: (prompt: string) => Promise<unknown>): Promise<void> {
+    const e = this.get(id);
+    const providerId = e.providers.music;
+    if (providerId !== MUSIC_ELEVENLABS && providerId !== MUSIC_CLAUDE) return;
+    const log = (t: string, kind: ActivityEvent['kind'] = 'tool') => this.activity(id, 'render', kind, t);
+    const file = path.join(e.dir, 'musica', MUSIC_FILE[providerId]);
+    const timesFile = path.join(project, MUSIC_TIMES_FILE);
+    const times = parseMusicTimes(fs.existsSync(timesFile) ? fs.readFileSync(timesFile, 'utf8') : null);
+    if (!fs.existsSync(file) || !times || analyzedAlready(file)) return;
+    let report: Awaited<ReturnType<typeof analyzeMusic>> = null;
+    await this.queue.add(id, 'render', 'render', 'Análisis de la música', async (signal) => {
+      log('Analiza la música: tempo, golpes y drop contra los cortes del video');
+      report = await analyzeMusic(project, file, times, providerId === MUSIC_ELEVENLABS ? buildMusicPlan(times).bpm : undefined, signal);
+    });
+    const r = report as Awaited<ReturnType<typeof analyzeMusic>>;
+    if (!r) return log('No se pudo analizar la música; el video se renderiza igual.', 'info');
+    log(describeAnalysis(r.analysis), 'info');
+    for (const w of r.analysis.warnings) log(w, 'info');
+    const toMove = cutsToAlign(r.analysis);
+    log(
+      `Claude pone el video al ritmo de la música: ${toMove.length ? `${toMove.length === 1 ? '1 corte' : `${toMove.length} cortes`} y ` : ''}los acercamientos, clics, apariciones y transiciones de cada escena (el logo y la escena final no se mueven)`,
+      'info',
+    );
+    const before = musicAnchors(times).map((a) => a.t);
+    await brain(P.musicAlignPrompt(describeAnalysis(r.analysis), beatsByScene(r.analysis, times), r.image ? path.relative(project, r.image).replace(/\\/g, '/') : null));
+    // The anchors must not move (they decide the music): if Claude moved one, say so.
+    const after = parseMusicTimes(fs.existsSync(timesFile) ? fs.readFileSync(timesFile, 'utf8') : null);
+    const moved = after ? musicAnchors(after).some((a, i) => Math.abs(a.t - (before[i] ?? a.t)) > 0.02) : false;
+    if (moved) log('Ojo: al ajustar los cortes se movió el logo, el drop o la escena final; la música ya no calza con ellos. Pídele a Claude que los deje como estaban.', 'error');
+  }
+
   /** True when the assembled project does not match the music chosen in Preparación. */
   private musicMissing(e: EpisodeState, project: string, music: P.RenderMusic): boolean {
     const audioFile = path.join(project, 'src', 'audio.tsx');
@@ -1181,7 +1224,7 @@ export class Pipeline {
       const timesFile = path.join(project, MUSIC_TIMES_FILE);
       const times = parseMusicTimes(fs.existsSync(timesFile) ? fs.readFileSync(timesFile, 'utf8') : null);
       if (!times) return 'Claude no dejó los tiempos de la música (public/musica/tiempos.json). Pídele en el chat de Render final que los escriba y vuelve a renderizar.';
-      const { plan, totalMs } = buildMusicPlan(times);
+      const { plan, totalMs, bpm } = buildMusicPlan(times);
       const planFile = path.join(dir, 'plan.json');
       const previous = fs.existsSync(planFile) ? fs.readFileSync(planFile, 'utf8') : null;
       if (fs.existsSync(file) && previous !== null && previous === musicPlanKey(plan)) {
@@ -1193,7 +1236,7 @@ export class Pipeline {
       const key = keys().elevenlabs;
       let problem: string | null = null;
       await this.queue.add(id, 'render', 'render', 'Música (ElevenLabs)', async (signal) => {
-        log(`Genera la música con ElevenLabs Music: ${(totalMs / 1000).toFixed(1)} s en ${plan.sections.length} secciones (${plan.sections.map((s) => s.section_name).join(' · ')}), ≈ ${credits} créditos`);
+        log(`Genera la música con ElevenLabs Music: ${(totalMs / 1000).toFixed(1)} s a ${bpm} BPM en ${plan.chunks.length} secciones (${plan.chunks.map((s) => s.text.replace(/[[\]]/g, '')).join(' · ')}), ≈ ${credits} créditos`);
         const before = await elevenUsedCredits(key).catch(() => null);
         try {
           await elevenMusic(key, plan, file, signal);

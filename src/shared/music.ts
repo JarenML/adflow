@@ -1,7 +1,9 @@
 // The episode's music, fitted to the final timeline. Claude writes the timeline while it assembles the
 // video in Remotion (public/musica/tiempos.json); from it AdFlow builds the composition plan for
-// ElevenLabs Music: Tension (→ logo) · Logo · Solution (→ drop) · Drop (→ closing scene) · Finale,
-// as the playbook's §4 asks. Pure, so it can be tested without the API.
+// ElevenLabs Music (music_v2_5, which always keeps each section's length): Tension (→ logo) · Logo ·
+// Solution (→ drop) · Drop (→ closing scene) · Finale, as the playbook's §4 asks. The logo and the
+// closing scene are fixed templates with their own sound: they are the anchors, and the tempo is chosen
+// so they and the drop start on a bar. Pure, so it can be tested without the API.
 
 /** Music providers (the "music" capability of Preparación). */
 export const MUSIC_NONE = 'none';
@@ -21,20 +23,22 @@ export interface MusicTimes {
   drop_s?: number;
   /** Start and end of the closing scene. */
   final?: [number, number];
+  /** Start of every scene after the first (the cuts), to line them up with the beat. */
+  cortes?: number[];
 }
 
-export interface MusicSection {
-  section_name: string;
+/** A section of an ElevenLabs Music v2/v2.5 composition plan («chunk»). */
+export interface MusicChunk {
+  /** Section name in brackets, e.g. «[Tension]» (instrumental: no lyrics). */
+  text: string;
   duration_ms: number;
-  positive_local_styles: string[];
-  negative_local_styles: string[];
-  lines: string[];
+  positive_styles: string[];
+  negative_styles: string[];
+  context_adherence: 'low' | 'medium' | 'high';
 }
 
 export interface MusicPlan {
-  positive_global_styles: string[];
-  negative_global_styles: string[];
-  sections: MusicSection[];
+  chunks: MusicChunk[];
 }
 
 /** ElevenLabs Music asks for sections of at least 3 s. */
@@ -60,7 +64,46 @@ export function parseMusicTimes(raw: string | null): MusicTimes | null {
   if (pair(j.logo) && j.logo[1] <= total) t.logo = j.logo;
   if (num(j.drop_s) && j.drop_s < total) t.drop_s = j.drop_s;
   if (pair(j.final) && j.final[0] < total) t.final = [j.final[0], Math.min(j.final[1], total)];
+  if (Array.isArray(j.cortes)) {
+    const cuts = j.cortes.filter((c): c is number => num(c) && c > 0 && c < total).sort((a, b) => a - b);
+    if (cuts.length) t.cortes = cuts;
+  }
   return t;
+}
+
+/** Tempo range the ads use, and the default when there is nothing to line up. */
+export const BPM_RANGE: [number, number] = [100, 130];
+export const DEFAULT_BPM = 118;
+
+/** The fixed points the music must hit: the logo (in and out), the drop and the closing scene. */
+export function musicAnchors(t: MusicTimes): { name: string; t: number }[] {
+  const a: { name: string; t: number }[] = [];
+  if (t.logo) a.push({ name: 'logo', t: t.logo[0] }, { name: 'fin del logo', t: t.logo[1] });
+  if (t.drop_s !== undefined) a.push({ name: 'drop', t: t.drop_s });
+  if (t.final) a.push({ name: 'escena final', t: t.final[0] });
+  return a.filter((x) => x.t > 0);
+}
+
+/**
+ * Pure: the whole-number tempo (4/4) at which the anchors land closest to the start of a bar, so the
+ * logo, the drop and the closing scene fall on a downbeat. Ties go to the tempo closest to the default.
+ */
+export function fitBpm(anchors: number[], range: [number, number] = BPM_RANGE): number {
+  if (!anchors.length) return DEFAULT_BPM;
+  let best = DEFAULT_BPM;
+  let bestErr = Infinity;
+  for (let bpm = range[0]; bpm <= range[1]; bpm++) {
+    const bar = 240 / bpm;
+    const err = anchors.reduce((n, a) => {
+      const off = a % bar;
+      return n + Math.min(off, bar - off) ** 2;
+    }, 0);
+    if (err < bestErr - 1e-9 || (Math.abs(err - bestErr) <= 1e-9 && Math.abs(bpm - DEFAULT_BPM) < Math.abs(best - DEFAULT_BPM))) {
+      best = bpm;
+      bestErr = err;
+    }
+  }
+  return best;
 }
 
 const STYLE = {
@@ -77,7 +120,7 @@ type Part = keyof typeof STYLE;
  * than 3 s joins the one before it (or the next, if it is the first), so the sections always add up
  * to the video's length.
  */
-export function buildMusicPlan(t: MusicTimes): { plan: MusicPlan; totalMs: number } {
+export function buildMusicPlan(t: MusicTimes): { plan: MusicPlan; totalMs: number; bpm: number } {
   const totalMs = Math.round(t.total_s * 1000);
   const marks: [Part, number][] = [['Tension', 0]];
   if (t.logo) marks.push(['Logo reveal', t.logo[0] * 1000], ['Solution', t.logo[1] * 1000]);
@@ -102,17 +145,19 @@ export function buildMusicPlan(t: MusicTimes): { plan: MusicPlan; totalMs: numbe
     parts = parts.filter((_, k) => k !== i);
     i = 0;
   }
+  const bpm = fitBpm(musicAnchors(t).map((a) => a.t));
+  const global = ['instrumental', 'modern corporate tech advertising', 'electronic', 'clean mix', 'social media ad', `${bpm} BPM`, '4/4'];
+  const avoid = ['vocals', 'singing', 'lyrics', 'choir', 'spoken word', 'lo-fi', 'distorted guitars'];
   return {
     totalMs,
+    bpm,
     plan: {
-      positive_global_styles: ['instrumental', 'modern corporate tech advertising', 'electronic', 'clean mix', '118 bpm', 'social media ad'],
-      negative_global_styles: ['vocals', 'singing', 'lyrics', 'choir', 'spoken word', 'lo-fi', 'distorted guitars'],
-      sections: parts.map(({ part, ms }) => ({
-        section_name: part,
+      chunks: parts.map(({ part, ms }) => ({
+        text: `[${part}]`,
         duration_ms: ms,
-        positive_local_styles: [...STYLE[part].pos],
-        negative_local_styles: [...STYLE[part].neg],
-        lines: [],
+        positive_styles: [...global, ...STYLE[part].pos],
+        negative_styles: [...avoid, ...STYLE[part].neg],
+        context_adherence: 'high' as const,
       })),
     },
   };

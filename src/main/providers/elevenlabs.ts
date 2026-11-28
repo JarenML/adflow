@@ -39,15 +39,16 @@ export async function elevenSpeech(key: string, voiceId: string, text: string, o
 }
 
 /**
- * An instrumental track from a composition plan (ElevenLabs Music, music_v1), saved as MP3. Its
- * sections follow the video's timeline (shared/music.ts). Takes about a minute.
+ * An instrumental track from a composition plan (ElevenLabs Music, music_v2_5: each section keeps
+ * exactly its length), saved as MP3. Its sections follow the video's timeline (shared/music.ts).
+ * Takes about a minute.
  */
 export async function elevenMusic(key: string, plan: unknown, outFile: string, signal?: AbortSignal): Promise<string> {
   const timeout = AbortSignal.timeout(300_000);
-  const res = await fetch(`${API}/v1/music?output_format=mp3_44100_128`, {
+  const res = await fetch(`${API}/v1/music?output_format=mp3_48000_192`, {
     method: 'POST',
     headers: { 'xi-api-key': key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ composition_plan: plan, model_id: 'music_v1' }),
+    body: JSON.stringify({ composition_plan: plan, model_id: 'music_v2_5' }),
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   });
   if (!res.ok) await fail(res, 'generar la música');

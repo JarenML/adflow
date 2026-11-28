@@ -240,7 +240,8 @@ export type RenderMusic = { kind: 'none' } | { kind: 'elevenlabs' } | { kind: 'c
 
 const MUSIC_TIMES = `public/musica/tiempos.json con los segundos de TU montaje:
   {"total_s": duración total, "logo": [inicio, fin] del logo, "drop_s": inicio de la primera escena
-  real del «después» (el drop), "final": [inicio, fin] de la escena final}`;
+  real del «después» (el drop), "final": [inicio, fin] de la escena final, "cortes": [inicio de cada
+  escena después de la primera]} (los cortes sirven para alinearlos al golpe de la música)`;
 
 const MUSIC_RULES = `con las reglas del playbook §4: calla en el logo (fundido de 0,15 s; la plantilla trae su
   audio), entra el drop en la primera escena real del «después», y en la escena final sigue baja bajo
@@ -259,8 +260,10 @@ function musicBlock(m: RenderMusic): string {
   tensión en tono menor → silencio en el logo → solución en mayor con energía media → drop en la
   primera escena real del «después» → baja bajo la voz en la escena final y corte a los 4,85 s. Debe
   sonar a producción, no a demo de sintetizador, y dejar libre el rango de la voz (evita 300–3000 Hz
-  al frente). ${m.numpy ? 'Puedes usar numpy (está instalado).' : 'Usa solo la biblioteca estándar de Python (wave, math, struct, random): numpy no está instalado.'}
-  Usa rutas relativas al propio script (os.path.dirname(__file__)), no al directorio actual. No lo
+  al frente). Elige un tempo de 100–130 BPM con el que el inicio del logo, el drop y el inicio de la
+  escena final caigan al inicio de un compás (4/4), y marca el pulso con claridad. ${m.numpy ? 'Puedes usar numpy (está instalado).' : 'Usa solo la biblioteca estándar de Python (wave, math, struct, random): numpy no está instalado.'}
+  Fija la semilla de todo lo aleatorio (random.seed / numpy) para que el mismo script dé siempre el
+  mismo WAV. Usa rutas relativas al propio script (os.path.dirname(__file__)), no al directorio actual. No lo
   ejecutes: AdFlow lo corre después de tu montaje y deja el WAV en
   public/musica/. Escribe también ${MUSIC_TIMES}.
   En src/audio.tsx usa MUSIC_FILE = 'musica.wav' (solo el nombre: el código ya antepone musica/)
@@ -321,6 +324,39 @@ export function musicAddPrompt(music: RenderMusic): string {
   return `Este episodio ahora lleva música y el montaje todavía no la tiene. Agrégala al proyecto tal como
 está, sin cambiar escenas, duraciones ni voces:
 ${musicBlock(music)}`;
+}
+
+/**
+ * AdFlow measured the track (Claude cannot hear it): the whole picture goes to its beat — the cuts and,
+ * inside each scene, the camera moves, the clicks and zooms of the page demos, the pop-ins and the 2D
+ * transitions. The logo and the closing scene are fixed templates with their own sound, so they, the
+ * drop and the total never move.
+ */
+export function musicAlignPrompt(report: string, grid: string, image: string | null): string {
+  return `La música ya está lista. Tú no puedes oírla, así que AdFlow la midió contra tu montaje:
+
+${report}
+
+Grilla de golpes de cada escena (segundos desde que empieza la escena; «|» = inicio de compás):
+${grid}
+${image ? `\nMira también ${image}: el espectrograma de la pista (arriba, claro = más fuerte) y su volumen (abajo, con un tick por golpe), con líneas rojas en el logo y la escena final (fijos), verde en el drop y blancas en los demás cortes.\n` : ''}
+Haz que todo el video vaya al ritmo de la música, para que se vea más producido:
+1. Cortes: mueve al golpe más cercano los marcados con «→» (como mucho 0,3 s cada uno), ajustando la
+   duración de las escenas vecinas dentro del mismo tramo, y actualiza "cortes" en
+   public/musica/tiempos.json.
+2. Dentro de cada escena, cuadra con la grilla los momentos visuales: el arranque de los acercamientos
+   y paneos de cámara, los clics, zooms y cambios en las demostraciones de la página, la aparición de
+   tarjetas, chips, textos y burbujas, los gestos de Robly y las transiciones 2D. Los momentos grandes
+   (la revelación, el dato que se destaca, el zoom a la cita) van en un inicio de compás «|»; los
+   pequeños, en cualquier golpe. Mueve cada uno lo mínimo (al golpe más cercano) y convierte segundos
+   a cuadros con el FPS de common.tsx.
+3. No toques lo que va atado a la voz (subtítulos y tomas de voz) ni el sonido de los efectos que ya
+   coincide con su acción; si una animación debe seguir a una palabra, la palabra manda.
+4. El logo intermedio y la escena final son plantillas fijas con su propio sonido: no cambies su
+   duración ni su contenido. El inicio del logo, el drop, el inicio de la escena final y la duración
+   total deben quedar exactamente igual. No cambies la música ni src/audio.tsx.
+Revisa con \`npx tsc --noEmit\` y algunos cuadros con \`npx remotion still\`. Al final, di en una lista corta qué
+moviste.`;
 }
 
 export function musicFixPrompt(error: string): string {
